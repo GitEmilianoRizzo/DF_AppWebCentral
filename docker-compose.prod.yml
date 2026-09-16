@@ -1,0 +1,60 @@
+# ============================================
+# DF Group - Docker Compose PRODUCCION
+# Solo Frontend + Backend (SQL Server externo)
+# ============================================
+
+version: '3.8'
+
+services:
+  # ----------------------------------------
+  # Frontend (React + Nginx)
+  # ----------------------------------------
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: /api/v1
+    container_name: dfgroup-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - dfgroup-network
+    restart: always
+
+  # ----------------------------------------
+  # Backend API (.NET 9)
+  # ----------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: backend/DFGroup.Api/Dockerfile
+    container_name: dfgroup-api
+    ports:
+      - "5000:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ConnectionStrings__DFGroupDb=${DB_CONNECTION_STRING}
+      - Serilog__MinimumLevel__Default=Warning
+    networks:
+      - dfgroup-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: always
+    volumes:
+      - api-logs:/app/logs
+
+networks:
+  dfgroup-network:
+    driver: bridge
+
+volumes:
+  api-logs:
+    driver: local

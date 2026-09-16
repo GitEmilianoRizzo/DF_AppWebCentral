@@ -1,0 +1,104 @@
+﻿# ============================================
+# DF Group - Git Ignore
+# Combined: Custom + VisualStudio template
+# ============================================
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.*.local
+.env.production
+
+# Production config with secrets (use environment variables in production)
+appsettings.Production.json
+appsettings.*.local.json
+**/secrets.json
+**/credentials.json
+
+# ----------------------------------------
+# Backend (.NET)
+# ----------------------------------------
+backend/DFGroup.Api/bin/
+backend/DFGroup.Api/obj/
+backend/DFGroup.Api/logs/
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.rsuser
+.vs/
+
+# NuGet
+*.nupkg
+*.snupkg
+
+# ----------------------------------------
+# Frontend (Node/React)
+# ----------------------------------------
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/*.local
+node_modules/
+
+# ----------------------------------------
+# IDE
+# ----------------------------------------
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ----------------------------------------
+# OS
+# ----------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ----------------------------------------
+# Logs
+# ----------------------------------------
+logs/
+*.log
+npm-debug.log*
+
+# ----------------------------------------
+# Database
+# ----------------------------------------
+*.bak
+*.mdf
+*.ldf
+*.ndf
+
+# ----------------------------------------
+# Docker
+# ----------------------------------------
+docker-compose.override.yml
+
+# ----------------------------------------
+# Misc
+# ----------------------------------------
+*.tmp
+*.temp
+coverage/
+.nyc_output/
+
+# ----------------------------------------
+# Development notes (internal)
+# ----------------------------------------
+prompts_*.md
+read_excel.ps1
+nul
