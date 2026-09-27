@@ -81,6 +81,34 @@ builder.Services.AddValidatorsFromAssemblyContaining<DailySalesBatchRequestValid
 
 // JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("Jwt").Get<JwtSettings>()!;
+
+/* ---------------------------------------------------------------------------
+   La clave de firma NO vive en ningun archivo del repositorio: se inyecta por
+   la variable de entorno Jwt__Secret, que los .bat de arranque leen de
+   C:\PILL-DF\_secrets\webapp_jwt.txt.
+
+   Se valida aca y no mas adelante porque el sintoma natural es pesimo: sin
+   clave, appsettings.json aporta el texto literal "${JWT_SECRET}" (.NET no
+   expande esa sintaxis), la app arranca igual y recien al intentar loguearse
+   devuelve 400 con "IDX10653: The encryption algorithm HS256 requires a key
+   size of at least 128 bits". Nada en ese mensaje sugiere que falta una
+   variable de entorno.
+   --------------------------------------------------------------------------- */
+if (string.IsNullOrWhiteSpace(jwtSettings.Secret)
+    || jwtSettings.Secret.Contains("${")
+    || Encoding.UTF8.GetByteCount(jwtSettings.Secret) < 32)
+{
+    throw new InvalidOperationException(
+        "Falta la clave de firma de los tokens, o es demasiado corta (HS256 " +
+        "necesita al menos 32 bytes).\n" +
+        "Se toma de la variable de entorno Jwt__Secret. Los lanzadores " +
+        "INICIAR_APP.bat e INICIAR_DEPLOY.bat la leen de " +
+        "C:\\PILL-DF\\_secrets\\webapp_jwt.txt.\n" +
+        "Para generar una:\n" +
+        "  powershell -Command \"$b=New-Object byte[] 48;" +
+        "[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b);" +
+        "[Convert]::ToBase64String($b)|Set-Content 'C:\\PILL-DF\\_secrets\\webapp_jwt.txt' -NoNewline\"");
+}
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;

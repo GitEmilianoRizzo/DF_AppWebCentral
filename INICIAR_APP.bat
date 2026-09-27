@@ -27,8 +27,28 @@ if not exist "%RT%\node\node.exe" (
     exit /b 1
 )
 
+REM ---------------------------------------------------------------------------
+REM Clave de firma de los tokens.
+REM
+REM Desarrollo la toma del mismo archivo que el deploy. Antes estaba escrita
+REM dentro de appsettings.Development.json, pero ese archivo viaja al
+REM repositorio, que es publico: cualquiera podia firmar tokens validos contra
+REM una instancia en modo Desarrollo. Ahora no hay ninguna clave en el codigo.
+REM
+REM El doble guion bajo es como .NET anida configuracion: Jwt__Secret equivale
+REM a la seccion Jwt, clave Secret.
+REM ---------------------------------------------------------------------------
+set "ARCHIVO_JWT=C:\PILL-DF\_secrets\webapp_jwt.txt"
+if not exist "%ARCHIVO_JWT%" (
+    echo [ERROR] Falta la clave de firma en %ARCHIVO_JWT%
+    echo Generar una con:
+    echo   powershell -Command "$b=New-Object byte[] 48;[Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b);[Convert]::ToBase64String($b)^|Set-Content '%ARCHIVO_JWT%' -NoNewline"
+    exit /b 1
+)
+set /p Jwt__Secret=<"%ARCHIVO_JWT%"
+
 echo Levantando backend  (http://localhost:7100) ...
-start "DFGroup API" cmd /k "cd /d "%~dp0backend\DFGroup.Api" && set PATH=%RT%\dotnet;%PATH% && dotnet run"
+start "DFGroup API" cmd /k "cd /d "%~dp0backend\DFGroup.Api" && set PATH=%RT%\dotnet;%PATH% && set Jwt__Secret=%Jwt__Secret% && dotnet run"
 
 echo Esperando a que la API levante ...
 timeout /t 12 /nobreak >nul
