@@ -16,7 +16,7 @@
 ================================================================================
 */
 
-USE [DF_DTW_APP]
+USE [DF_DTW]
 GO
 
 PRINT 'Cargando catalogo extendido de productos...'

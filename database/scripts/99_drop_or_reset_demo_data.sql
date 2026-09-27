@@ -17,7 +17,7 @@
 ================================================================================
 */
 
-USE [DF_DTW_APP]
+USE [DF_DTW]
 GO
 
 PRINT '============================================'
@@ -187,11 +187,11 @@ GO
 USE [master]
 GO
 
-IF EXISTS (SELECT name FROM sys.databases WHERE name = N'DF_DTW_APP')
+IF EXISTS (SELECT name FROM sys.databases WHERE name = N'DF_DTW')
 BEGIN
-    ALTER DATABASE [DF_DTW_APP] SET SINGLE_USER WITH ROLLBACK IMMEDIATE
-    DROP DATABASE [DF_DTW_APP]
-    PRINT 'Base de datos DF_DTW_APP eliminada.'
+    ALTER DATABASE [DF_DTW] SET SINGLE_USER WITH ROLLBACK IMMEDIATE
+    DROP DATABASE [DF_DTW]
+    PRINT 'Base de datos DF_DTW eliminada.'
 END
 GO
 */

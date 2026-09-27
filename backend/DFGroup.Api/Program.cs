@@ -197,8 +197,38 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapHealthChecks("/health");
 
-// Redirect root to swagger
-app.MapGet("/", () => Results.Redirect("/swagger"));
+/* ---------------------------------------------------------------------------
+   El frontend compilado se sirve desde la misma aplicacion.
+
+   En desarrollo el front corre aparte en :3000 con Vite y proxya /api al 7100.
+   Para que alguien lo vea desde otra maquina eso obliga a exponer dos puertos y
+   a mantener el proxy; sirviendo el build desde aca queda UNA sola URL y un
+   solo puerto.
+
+   El fallback a index.html es lo que hace que /ventas/informe-grido funcione al
+   recargar: sin eso el router de React nunca llega a ver la ruta, porque el
+   servidor busca un archivo con ese nombre y devuelve 404.
+   Se aplica solo si existe wwwroot: si no se compilo el front, la API sigue
+   funcionando igual y la raiz lleva a Swagger.
+   --------------------------------------------------------------------------- */
+var wwwroot = Path.Combine(app.Environment.ContentRootPath, "wwwroot");
+if (Directory.Exists(wwwroot) && File.Exists(Path.Combine(wwwroot, "index.html")))
+{
+    app.UseDefaultFiles();
+    app.UseStaticFiles();
+
+    // Cualquier ruta que no sea API, swagger ni health, la resuelve el router
+    // del navegador.
+    app.MapFallbackToFile("index.html");
+
+    Log.Information("Frontend servido desde {Ruta}", wwwroot);
+}
+else
+{
+    // Sin build del front, la raiz lleva a la documentacion de la API.
+    app.MapGet("/", () => Results.Redirect("/swagger"));
+    Log.Warning("No hay frontend compilado en wwwroot: solo se expone la API.");
+}
 
 Log.Information("DF Group API iniciada en {Environment}", app.Environment.EnvironmentName);
 

@@ -6,7 +6,7 @@
 ================================================================================
 */
 
-USE [DF_DTW_APP]
+USE [DF_DTW]
 GO
 
 -- Actualizar vista de Estado de Integracion

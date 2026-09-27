@@ -8,7 +8,7 @@
 ================================================================================
 */
 
-USE [DF_DTW_APP]
+USE [DF_DTW]
 GO
 
 -- Insertar Grupos Economicos (Razones Sociales) que no existen

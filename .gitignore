@@ -102,3 +102,12 @@ coverage/
 prompts_*.md
 read_excel.ps1
 nul
+
+# Frontend compilado que sirve el deploy. Es salida de "npm run build" y se
+# regenera cuando haga falta: versionarlo ensucia cada commit con un bundle
+# nuevo y genera conflictos imposibles de resolver a mano.
+backend/DFGroup.Api/wwwroot/
+
+# Material de trabajo: capturas, planillas de prueba, notas sueltas. Util en
+# el servidor, no es codigo del proyecto.
+Prompts_testing/

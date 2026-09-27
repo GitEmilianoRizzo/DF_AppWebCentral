@@ -2,13 +2,10 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { MainLayout } from './components/layout/MainLayout'
 import { ProtectedRoute, useAuth } from './contexts/AuthContext'
 import { Login } from './pages/Login'
-import { DashboardHome } from './pages/DashboardHome'
-import { VentasFranquicia } from './pages/VentasFranquicia'
-import { VentasProducto } from './pages/VentasProducto'
-import { VentasMozo } from './pages/VentasMozo'
-import { OcupacionMesas } from './pages/OcupacionMesas'
-import { Conexiones } from './pages/Conexiones'
-import { EstadoIntegracion } from './pages/EstadoIntegracion'
+import { InformeDiarioGrido } from './pages/InformeDiarioGrido'
+import { EstadisticaVentas } from './pages/EstadisticaVentas'
+import { Compras } from './pages/Compras'
+import { Stock } from './pages/Stock'
 import { TiposCambio } from './pages/TiposCambio'
 import { Usuarios } from './pages/Usuarios'
 
@@ -53,13 +50,15 @@ function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<DashboardHome />} />
-        <Route path="ventas/franquicia" element={<VentasFranquicia />} />
-        <Route path="ventas/producto" element={<VentasProducto />} />
-        <Route path="ventas/mozo" element={<VentasMozo />} />
-        <Route path="operaciones/mesas" element={<OcupacionMesas />} />
-        <Route path="conexiones" element={<Conexiones />} />
-        <Route path="integracion/estado" element={<EstadoIntegracion />} />
+        {/* La raiz ya no es un dashboard: la primera seccion del menu es Ventas. */}
+        <Route index element={<Navigate to="/ventas" replace />} />
+        {/* Ventas no tiene pagina propia: en el menu es una rama que se
+            despliega. Entrar por URL cae en su primera subseccion. */}
+        <Route path="ventas" element={<Navigate to="/ventas/informe-grido" replace />} />
+        <Route path="ventas/informe-grido" element={<InformeDiarioGrido />} />
+        <Route path="ventas/estadistica" element={<EstadisticaVentas />} />
+        <Route path="compras" element={<Compras />} />
+        <Route path="stock" element={<Stock />} />
         <Route path="admin/tipos-cambio" element={<TiposCambio />} />
         {/* Admin-only routes */}
         <Route

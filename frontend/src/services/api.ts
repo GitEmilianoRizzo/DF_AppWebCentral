@@ -571,3 +571,154 @@ export const authApi = {
     return response.data
   },
 }
+
+// ============================================================================
+// Informe Diario GRIDO
+// ============================================================================
+
+export interface InformeGridoFila {
+  fecha_operativa: string
+  sucursal: number
+  sucursal_rotulo: string
+  orden_sucursal: number
+  turno: number
+  caja: number
+  cajero: string
+  horario: string
+  horas: number
+  kilos: number
+  ventas: number
+  tickets: number
+  sv_activadas: number
+  sv_aceptadas: number
+  promos: number
+  socios: number
+  ventas_club: number
+  anuladas: number
+  dif_caja: number
+}
+
+export const informeGridoApi = {
+  /**
+   * Filas del informe para un rango de jornadas. Las fechas van en formato
+   * YYYY-MM-DD; la jornada va de 02:00 a 02:00.
+   */
+  async getInforme(desde: string, hasta: string): Promise<InformeGridoFila[]> {
+    const response = await apiClient.get<InformeGridoFila[]>('/ventas/informe-grido', {
+      params: { desde, hasta },
+    })
+    return response.data
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Estadistica de Ventas (replica de la pantalla homonima de SmartFran)
+// ---------------------------------------------------------------------------
+
+export interface EstadisticaTotales {
+  venta_total: number
+  tickets: number
+  ticket_promedio: number
+  cantidad: number
+  descuentos: number
+  /** Unidades vendidas en promocion, no cantidad de lineas. */
+  promos: number
+  kilos: number
+  costo: number
+  /** Venta - Costo de mercaderia. Es la "Utilidad" de SmartFran. */
+  utilidad: number
+  /** Utilidad menos insumos. Indicador propio, no existe en SmartFran. */
+  contrib_marginal: number
+  tickets_anulados: number
+  sv_activadas: number
+  sv_aceptadas: number
+  sv_importe: number
+  sv_kilos: number
+}
+
+export interface EstadisticaFila {
+  detalle: string
+  sucursal: number | null
+  articulo: number | null
+  venta: number
+  porcentaje: number | null
+  pedidos: number | null
+  cantidad: number
+  descuentos: number | null
+  promos: number | null
+  kilos: number | null
+  costo: number | null
+  utilidad: number | null
+  pct_utilidad: number | null
+  contrib_marginal: number | null
+  pct_contrib: number | null
+}
+
+export interface EstadisticaDia {
+  dia: string
+  venta: number
+  tickets: number
+  kilos: number
+  utilidad: number
+  contrib_marginal: number
+}
+
+export interface EstadisticaDistribucion {
+  tipo: 'HORA' | 'DIASEMANA' | 'MES' | 'CANAL' | 'ENTREGA'
+  orden: number
+  clave: string
+  venta: number
+  tickets: number
+}
+
+export interface EstadisticaVentasRespuesta {
+  totales: EstadisticaTotales
+  por_sucursal: EstadisticaFila[]
+  por_grupo: EstadisticaFila[]
+  por_articulo: EstadisticaFila[]
+  por_promocion: EstadisticaFila[]
+  por_sobreventa: EstadisticaFila[]
+  historia: EstadisticaDia[]
+  distribuciones: EstadisticaDistribucion[]
+}
+
+export interface EstadisticaFiltros {
+  /** Hora calendario, NO jornada comercial. Formato YYYY-MM-DDTHH:mm. */
+  desde: string
+  /** EXCLUSIVO: para ver hasta el 8 inclusive, mandar el 9 a las 00:00. */
+  hasta: string
+  sucursales?: string
+  horaDesde?: number
+  horaHasta?: number
+  diasSemana?: string
+  grupoProducto?: number
+  tipoProducto?: string
+  delivery?: number
+  cajero?: string
+  topArticulos?: number
+}
+
+export const estadisticaVentasApi = {
+  async getEstadistica(filtros: EstadisticaFiltros): Promise<EstadisticaVentasRespuesta> {
+    // Los vacios no se mandan: el backend los trata como "todos" y asi la URL
+    // queda legible cuando hay que depurar una consulta.
+    const params: Record<string, string | number> = {
+      desde: filtros.desde,
+      hasta: filtros.hasta,
+    }
+    if (filtros.sucursales) params.sucursales = filtros.sucursales
+    if (filtros.horaDesde !== undefined) params.horaDesde = filtros.horaDesde
+    if (filtros.horaHasta !== undefined) params.horaHasta = filtros.horaHasta
+    if (filtros.diasSemana) params.diasSemana = filtros.diasSemana
+    if (filtros.grupoProducto) params.grupoProducto = filtros.grupoProducto
+    if (filtros.tipoProducto) params.tipoProducto = filtros.tipoProducto
+    if (filtros.delivery !== undefined) params.delivery = filtros.delivery
+    if (filtros.cajero) params.cajero = filtros.cajero
+    if (filtros.topArticulos) params.topArticulos = filtros.topArticulos
+
+    const response = await apiClient.get<EstadisticaVentasRespuesta>('/ventas/estadistica', {
+      params,
+    })
+    return response.data
+  },
+}

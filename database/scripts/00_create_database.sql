@@ -2,7 +2,7 @@
 ================================================================================
   DF Group - Central de Informacion para Franquicias
   Script: 00_create_database.sql
-  Descripcion: Crea la base de datos DF_DTW_APP si no existe
+  Descripcion: Crea la base de datos DF_DTW si no existe
   Autor: Claude Code
   Fecha: 2026-07-16
 
@@ -16,49 +16,49 @@ USE [master]
 GO
 
 -- Verificar si la base de datos existe antes de crearla
-IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = N'DF_DTW_APP')
+IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = N'DF_DTW')
 BEGIN
-    PRINT 'Creando base de datos DF_DTW_APP...'
+    PRINT 'Creando base de datos DF_DTW...'
 
-    CREATE DATABASE [DF_DTW_APP]
+    CREATE DATABASE [DF_DTW]
     ON PRIMARY
     (
-        NAME = N'DF_DTW_APP',
-        FILENAME = N'C:\SQLData\DF_DTW_APP.mdf',  -- Ajustar ruta segun ambiente
+        NAME = N'DF_DTW',
+        FILENAME = N'C:\SQLData\DF_DTW.mdf',  -- Ajustar ruta segun ambiente
         SIZE = 100MB,
         MAXSIZE = UNLIMITED,
         FILEGROWTH = 100MB
     )
     LOG ON
     (
-        NAME = N'DF_DTW_APP_log',
-        FILENAME = N'C:\SQLData\DF_DTW_APP_log.ldf',  -- Ajustar ruta segun ambiente
+        NAME = N'DF_DTW_log',
+        FILENAME = N'C:\SQLData\DF_DTW_log.ldf',  -- Ajustar ruta segun ambiente
         SIZE = 50MB,
         MAXSIZE = 2048GB,
         FILEGROWTH = 50MB
     )
 
-    PRINT 'Base de datos DF_DTW_APP creada exitosamente.'
+    PRINT 'Base de datos DF_DTW creada exitosamente.'
 END
 ELSE
 BEGIN
-    PRINT 'La base de datos DF_DTW_APP ya existe. No se realizaron cambios.'
+    PRINT 'La base de datos DF_DTW ya existe. No se realizaron cambios.'
 END
 GO
 
 -- Configuraciones basicas de la base de datos
-USE [DF_DTW_APP]
+USE [DF_DTW]
 GO
 
 -- Configurar el modo de recuperacion
-ALTER DATABASE [DF_DTW_APP] SET RECOVERY SIMPLE
+ALTER DATABASE [DF_DTW] SET RECOVERY SIMPLE
 GO
 
 -- Habilitar snapshot isolation para evitar bloqueos en lecturas del dashboard
-ALTER DATABASE [DF_DTW_APP] SET ALLOW_SNAPSHOT_ISOLATION ON
+ALTER DATABASE [DF_DTW] SET ALLOW_SNAPSHOT_ISOLATION ON
 GO
 
-ALTER DATABASE [DF_DTW_APP] SET READ_COMMITTED_SNAPSHOT ON
+ALTER DATABASE [DF_DTW] SET READ_COMMITTED_SNAPSHOT ON
 GO
 
 PRINT 'Configuracion de base de datos completada.'
