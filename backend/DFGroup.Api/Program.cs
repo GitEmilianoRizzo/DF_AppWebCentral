@@ -70,6 +70,10 @@ builder.Services.AddScoped<IExchangeRateProvider, ExchangeRateHostProvider>();
 builder.Services.AddScoped<IExchangeRateProvider, DolarApiProvider>();
 builder.Services.AddScoped<IExchangeRateService, ExchangeRateService>();
 
+// Correo saliente. La clave NO esta en appsettings: viene de la variable de
+// entorno Smtp__Password, que los lanzadores leen de _secrets.
+builder.Services.AddScoped<IMailService, MailService>();
+
 // Background Job para refresh diario de tasas
 builder.Services.AddHostedService<ExchangeRateRefreshJob>();
 

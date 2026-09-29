@@ -47,8 +47,26 @@ if not exist "%ARCHIVO_JWT%" (
 )
 set /p Jwt__Secret=<"%ARCHIVO_JWT%"
 
+REM ---------------------------------------------------------------------------
+REM Clave del correo saliente (avisos del modulo de Estrategia).
+REM
+REM Es una CONTRASENA DE APLICACION de Gmail, no la clave de la cuenta. Misma
+REM logica que la de firma: fuera del codigo, porque appsettings.json viaja al
+REM repositorio.
+REM
+REM Si falta, la app levanta igual y el modulo de Estrategia funciona entero;
+REM lo unico que no se puede es mandar el aviso a los locales. No vale la pena
+REM frenar todo por eso.
+REM ---------------------------------------------------------------------------
+set "ARCHIVO_SMTP=C:\PILL-DF\_secrets\webapp_smtp.txt"
+if exist "%ARCHIVO_SMTP%" (
+    set /p Smtp__Password=<"%ARCHIVO_SMTP%"
+) else (
+    echo [AVISO] Falta %ARCHIVO_SMTP%: no se van a poder enviar los avisos de Estrategia.
+)
+
 echo Levantando backend  (http://localhost:7100) ...
-start "DFGroup API" cmd /k "cd /d "%~dp0backend\DFGroup.Api" && set PATH=%RT%\dotnet;%PATH% && set Jwt__Secret=%Jwt__Secret% && dotnet run"
+start "DFGroup API" cmd /k "cd /d "%~dp0backend\DFGroup.Api" && set PATH=%RT%\dotnet;%PATH% && set Jwt__Secret=%Jwt__Secret% && set Smtp__Password=%Smtp__Password% && dotnet run"
 
 echo Esperando a que la API levante ...
 timeout /t 12 /nobreak >nul

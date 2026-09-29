@@ -4,6 +4,8 @@ import { ProtectedRoute, useAuth } from './contexts/AuthContext'
 import { Login } from './pages/Login'
 import { InformeDiarioGrido } from './pages/InformeDiarioGrido'
 import { EstadisticaVentas } from './pages/EstadisticaVentas'
+import { Estrategia } from './pages/Estrategia'
+import { FicheroArticulos } from './pages/FicheroArticulos'
 import { Compras } from './pages/Compras'
 import { Stock } from './pages/Stock'
 import { TiposCambio } from './pages/TiposCambio'
@@ -57,6 +59,10 @@ function App() {
         <Route path="ventas" element={<Navigate to="/ventas/informe-grido" replace />} />
         <Route path="ventas/informe-grido" element={<InformeDiarioGrido />} />
         <Route path="ventas/estadistica" element={<EstadisticaVentas />} />
+        <Route path="ventas/estrategia" element={<Estrategia />} />
+        {/* ABMs tampoco tiene pagina propia: es una rama del menu. */}
+        <Route path="abm" element={<Navigate to="/abm/articulos" replace />} />
+        <Route path="abm/articulos" element={<FicheroArticulos />} />
         <Route path="compras" element={<Compras />} />
         <Route path="stock" element={<Stock />} />
         <Route path="admin/tipos-cambio" element={<TiposCambio />} />

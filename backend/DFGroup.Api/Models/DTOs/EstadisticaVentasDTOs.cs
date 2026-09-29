@@ -160,6 +160,70 @@ public class EstadisticaDistribucionDto
     public int Tickets { get; set; }
 }
 
+/// <summary>
+/// Una celda del mapa de calor: que se vendio en tal hora de tal dia de la
+/// semana. Llega la grilla completa de 7x24, con ceros donde no hubo venta.
+/// </summary>
+public class EstadisticaMapaCalorDto
+{
+    /// <summary>1 = lunes .. 7 = domingo.</summary>
+    [JsonPropertyName("dia_semana")]
+    public int DiaSemana { get; set; }
+
+    [JsonPropertyName("hora")]
+    public int Hora { get; set; }
+
+    [JsonPropertyName("venta")]
+    public decimal Venta { get; set; }
+
+    [JsonPropertyName("kilos")]
+    public decimal Kilos { get; set; }
+
+    [JsonPropertyName("tickets")]
+    public int Tickets { get; set; }
+}
+
+/// <summary>
+/// Venta cruzada con la temperatura. La franja es el piso de un tramo de dos
+/// grados: 24 significa "de 24 a 25,9". Solo entran las lineas que tienen
+/// clima asociado.
+/// </summary>
+public class EstadisticaClimaDiaDto
+{
+    [JsonPropertyName("franja")] public int Franja { get; set; }
+
+    /// <summary>1 = lunes .. 7 = domingo.</summary>
+    [JsonPropertyName("dia_semana")] public int DiaSemana { get; set; }
+
+    [JsonPropertyName("venta")] public decimal Venta { get; set; }
+    [JsonPropertyName("kilos")] public decimal Kilos { get; set; }
+    [JsonPropertyName("tickets")] public int Tickets { get; set; }
+}
+
+/// <summary>Lo mismo pero contra la hora del dia.</summary>
+public class EstadisticaClimaHoraDto
+{
+    [JsonPropertyName("franja")] public int Franja { get; set; }
+    [JsonPropertyName("hora")] public int Hora { get; set; }
+    [JsonPropertyName("venta")] public decimal Venta { get; set; }
+    [JsonPropertyName("kilos")] public decimal Kilos { get; set; }
+    [JsonPropertyName("tickets")] public int Tickets { get; set; }
+}
+
+/// <summary>
+/// Cuanto vendio cada promocion en cada franja de temperatura. Sirve para ver
+/// que promo rinde con calor y cual con frio. Acotado a las 25 de mayor venta.
+/// </summary>
+public class EstadisticaPromoClimaDto
+{
+    [JsonPropertyName("promocion")] public int Promocion { get; set; }
+    [JsonPropertyName("detalle")] public string Detalle { get; set; } = string.Empty;
+    [JsonPropertyName("franja")] public int Franja { get; set; }
+    [JsonPropertyName("venta")] public decimal Venta { get; set; }
+    [JsonPropertyName("kilos")] public decimal Kilos { get; set; }
+    [JsonPropertyName("tickets")] public int Tickets { get; set; }
+}
+
 /// <summary>Todo lo que devuelve una corrida de la consulta.</summary>
 public class EstadisticaVentasRespuestaDto
 {
@@ -186,4 +250,16 @@ public class EstadisticaVentasRespuestaDto
 
     [JsonPropertyName("distribuciones")]
     public IEnumerable<EstadisticaDistribucionDto> Distribuciones { get; set; } = [];
+
+    [JsonPropertyName("mapa_calor")]
+    public IEnumerable<EstadisticaMapaCalorDto> MapaCalor { get; set; } = [];
+
+    [JsonPropertyName("clima_dia")]
+    public IEnumerable<EstadisticaClimaDiaDto> ClimaDia { get; set; } = [];
+
+    [JsonPropertyName("clima_hora")]
+    public IEnumerable<EstadisticaClimaHoraDto> ClimaHora { get; set; } = [];
+
+    [JsonPropertyName("promo_clima")]
+    public IEnumerable<EstadisticaPromoClimaDto> PromoClima { get; set; } = [];
 }

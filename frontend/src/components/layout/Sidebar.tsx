@@ -7,6 +7,7 @@ import {
   BadgeDollarSign,
   UserCog,
   Shield,
+  Database,
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -27,10 +28,18 @@ const navigation: NavItem[] = [
     children: [
       { name: 'Informe Diario GRIDO', href: '/ventas/informe-grido' },
       { name: 'Estadistica Ventas', href: '/ventas/estadistica' },
+      // Va al final de Ventas y no en una seccion propia: se decide sobre lo
+      // que se acaba de mirar en las dos de arriba.
+      { name: 'Estrategia', href: '/ventas/estrategia' },
     ],
   },
   { name: 'Compras', icon: ShoppingCart, href: '/compras' },
   { name: 'Stock', icon: Boxes, href: '/stock' },
+  {
+    name: 'ABMs',
+    icon: Database,
+    children: [{ name: 'Fichero de Articulos', href: '/abm/articulos' }],
+  },
   { name: 'Tipos de Cambio', icon: BadgeDollarSign, href: '/admin/tipos-cambio' },
 ]
 

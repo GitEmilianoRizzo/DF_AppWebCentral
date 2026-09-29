@@ -142,7 +142,11 @@ public class EstadisticaVentasController : ControllerBase
             PorPromocion = await grid.ReadAsync<EstadisticaFilaDto>(),
             PorSobreventa = await grid.ReadAsync<EstadisticaFilaDto>(),
             Historia = await grid.ReadAsync<EstadisticaDiaDto>(),
-            Distribuciones = await grid.ReadAsync<EstadisticaDistribucionDto>()
+            Distribuciones = await grid.ReadAsync<EstadisticaDistribucionDto>(),
+            MapaCalor = await grid.ReadAsync<EstadisticaMapaCalorDto>(),
+            ClimaDia = await grid.ReadAsync<EstadisticaClimaDiaDto>(),
+            ClimaHora = await grid.ReadAsync<EstadisticaClimaHoraDto>(),
+            PromoClima = await grid.ReadAsync<EstadisticaPromoClimaDto>()
         };
 
         return Ok(respuesta);

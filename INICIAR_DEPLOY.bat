@@ -52,9 +52,58 @@ if not exist "%ARCHIVO_JWT%" (
 )
 set /p Jwt__Secret=<"%ARCHIVO_JWT%"
 
+REM ---------------------------------------------------------------------------
+REM Clave del correo saliente (avisos del modulo de Estrategia).
+REM
+REM Es una CONTRASENA DE APLICACION de Gmail, de 16 caracteres, no la clave de
+REM la cuenta. Fuera del repositorio por la misma razon que la de firma.
+REM
+REM A diferencia de la de firma, su ausencia NO frena el arranque: sin ella la
+REM app funciona entera y lo unico que no se puede es mandar el aviso a los
+REM locales. La pantalla lo dice con todas las letras cuando pasa.
+REM ---------------------------------------------------------------------------
+set "ARCHIVO_SMTP=C:\PILL-DF\_secrets\webapp_smtp.txt"
+if exist "%ARCHIVO_SMTP%" (
+    set /p Smtp__Password=<"%ARCHIVO_SMTP%"
+) else (
+    echo [AVISO] Falta %ARCHIVO_SMTP%: no se van a poder enviar los avisos de Estrategia.
+)
+
+REM ---------------------------------------------------------------------------
 REM La IP de Tailscale se consulta en vivo: si cambia, el .bat sigue andando.
+REM
+REM Se prueban DOS caminos, y el segundo no es un lujo. El CLI de Tailscale
+REM queda tomado por la sesion de usuario que tenga abierta la aplicacion, y a
+REM cualquier otra le contesta:
+REM
+REM   401 Unauthorized: Tailscale already in use by WIN-6ARG3SUELOE\Administrator
+REM
+REM Cuando eso pasa, el .bat creia que Tailscale estaba caido y levantaba la
+REM app SOLO en 127.0.0.1: desde afuera dejaba de verse, aunque la red estaba
+REM perfecta. Paso el 29/09/2026 al publicar.
+REM
+REM La placa de red no tiene ese problema: la IP esta ahi la tenga tomada quien
+REM la tenga. Por eso si el CLI no contesta se lee la interfaz Tailscale.
+REM ---------------------------------------------------------------------------
+REM OJO al tocar esto: el segundo intento NO va dentro de un "if (...)" ni
+REM dentro de un "for /f". El comando de PowerShell lleva parentesis, comillas
+REM simples y barras verticales, y meterlo en cualquiera de esas dos
+REM construcciones termina en un "no se encuentra el archivo powershell" o en
+REM un bloque cerrado antes de tiempo. Escribiendo la IP a un archivo y
+REM leyendola con "set /p" no hay nada que escapar: todo el comando viaja
+REM dentro de un solo par de comillas, que ya protege las barras.
 set "TSIP="
 for /f "tokens=*" %%i in ('"%ProgramFiles%\Tailscale\tailscale.exe" ip -4 2^>nul') do set "TSIP=%%i"
+if not "%TSIP%"=="" goto :tiene_ip
+
+set "ARCHIVO_IP=%TEMP%\dfgroup_tsip.txt"
+if exist "%ARCHIVO_IP%" del "%ARCHIVO_IP%" >nul 2>&1
+powershell -NoProfile -Command "Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object InterfaceAlias -like 'Tailscale*' | Select-Object -First 1 -ExpandProperty IPAddress | Set-Content -Encoding ascii -NoNewline '%ARCHIVO_IP%'" >nul 2>&1
+if exist "%ARCHIVO_IP%" set /p TSIP=<"%ARCHIVO_IP%"
+if exist "%ARCHIVO_IP%" del "%ARCHIVO_IP%" >nul 2>&1
+if not "%TSIP%"=="" echo [INFO] El CLI de Tailscale no contesto; la IP se leyo de la placa de red.
+
+:tiene_ip
 
 if "%TSIP%"=="" (
     echo [ATENCION] Tailscale no responde. Se levanta solo para este equipo.

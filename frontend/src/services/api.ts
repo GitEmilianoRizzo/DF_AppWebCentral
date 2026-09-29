@@ -671,6 +671,46 @@ export interface EstadisticaDistribucion {
   tickets: number
 }
 
+export interface EstadisticaMapaCalor {
+  /** 1 = lunes .. 7 = domingo */
+  dia_semana: number
+  hora: number
+  venta: number
+  kilos: number
+  tickets: number
+}
+
+/**
+ * Venta cruzada con la temperatura. `franja` es el piso de un tramo de dos
+ * grados: 24 significa "de 24 a 25,9".
+ */
+export interface EstadisticaClimaDia {
+  franja: number
+  /** 1 = lunes .. 7 = domingo */
+  dia_semana: number
+  venta: number
+  kilos: number
+  tickets: number
+}
+
+export interface EstadisticaClimaHora {
+  franja: number
+  hora: number
+  venta: number
+  kilos: number
+  tickets: number
+}
+
+/** Cuanto vendio cada promocion en cada franja de temperatura. Top 25. */
+export interface EstadisticaPromoClima {
+  promocion: number
+  detalle: string
+  franja: number
+  venta: number
+  kilos: number
+  tickets: number
+}
+
 export interface EstadisticaVentasRespuesta {
   totales: EstadisticaTotales
   por_sucursal: EstadisticaFila[]
@@ -680,6 +720,10 @@ export interface EstadisticaVentasRespuesta {
   por_sobreventa: EstadisticaFila[]
   historia: EstadisticaDia[]
   distribuciones: EstadisticaDistribucion[]
+  mapa_calor: EstadisticaMapaCalor[]
+  clima_dia: EstadisticaClimaDia[]
+  clima_hora: EstadisticaClimaHora[]
+  promo_clima: EstadisticaPromoClima[]
 }
 
 export interface EstadisticaFiltros {
@@ -696,6 +740,126 @@ export interface EstadisticaFiltros {
   delivery?: number
   cajero?: string
   topArticulos?: number
+}
+
+// ---------------------------------------------------------------------------
+// Fichero de Articulos (solo lectura)
+// ---------------------------------------------------------------------------
+
+export interface ArticuloFila {
+  articulo: number
+  codigo: string | null
+  descripcion: string
+  tipo: string | null
+  grupo: number | null
+  grupo_descrip: string | null
+  estado: string | null
+  precio: number | null
+  costo: number | null
+  unid_x_bulto: number | null
+  peso: number | null
+  /** Nulo si el articulo todavia no tiene codigo SAP cargado. */
+  codigo_sap: string | null
+}
+
+export interface ArticuloDetalle {
+  articulo: number
+  codigo: string | null
+  descripcion: string
+  descrip_ticket: string | null
+  tipo: string | null
+  estado: string | null
+  fecha_estado: string | null
+  grupo: number | null
+  grupo_descrip: string | null
+  venta_publico: string | null
+  iva_tasa: number | null
+  orden: number | null
+  proveedor: number | null
+  unid_x_bulto: number | null
+  stock_minimo: number | null
+  peso: number | null
+  costo: number | null
+  precio_lista1: number | null
+  precio_lista2: number | null
+  precio_lista3: number | null
+  precio_gastro1: number | null
+  precio_gastro2: number | null
+  precio_gastro3: number | null
+}
+
+export interface ArticuloReceta {
+  orden: number
+  /** GENERICO (una categoria, como HELADO) o ARTICULO (un insumo concreto). */
+  clase: string
+  componente: number
+  descripcion: string | null
+  cantidad: number
+  /** Ya dividido por las unidades del bulto. Nulo para los genericos. */
+  costo_unit: number | null
+  costo_total: number | null
+}
+
+/**
+ * Relacion con el codigo SAP de Grido Central. Es lo unico editable de la
+ * ficha, y vive en el DWH: la base de origen se restaura entera todos los
+ * dias y se llevaria puesto lo cargado.
+ */
+export interface ArticuloSap {
+  codigo_sap: string | null
+  descripcion_sap: string | null
+  unidad_sap: string | null
+  /** Cuantas unidades SAP equivalen a una unidad local. */
+  factor_sap: number
+  observaciones: string | null
+  activo: boolean
+  usuario_alta: string | null
+  fecha_alta: string | null
+  usuario_mod: string | null
+  fecha_mod: string | null
+}
+
+export interface GuardarArticuloSap {
+  codigo_sap: string
+  descripcion_sap?: string | null
+  unidad_sap?: string | null
+  factor_sap: number
+  observaciones?: string | null
+  activo: boolean
+}
+
+export interface ArticuloFicha {
+  detalle: ArticuloDetalle | null
+  receta: ArticuloReceta[]
+  /** Nulo si el articulo todavia no tiene codigo SAP cargado. */
+  sap: ArticuloSap | null
+}
+
+export const ficheroArticulosApi = {
+  async listar(p: { buscar?: string; tipo?: string; soloActivos?: boolean; top?: number } = {}) {
+    const params: Record<string, string | number | boolean> = {
+      soloActivos: p.soloActivos ?? true,
+      top: p.top ?? 300,
+    }
+    if (p.buscar) params.buscar = p.buscar
+    if (p.tipo) params.tipo = p.tipo
+    const r = await apiClient.get<ArticuloFila[]>('/abm/articulos', { params })
+    return r.data
+  },
+
+  async ficha(articulo: number) {
+    const r = await apiClient.get<ArticuloFicha>(`/abm/articulos/${articulo}`)
+    return r.data
+  },
+
+  async guardarSap(articulo: number, datos: GuardarArticuloSap) {
+    const r = await apiClient.put<ArticuloSap>(`/abm/articulos/${articulo}/sap`, datos)
+    return r.data
+  },
+
+  async borrarSap(articulo: number) {
+    await apiClient.delete(`/abm/articulos/${articulo}/sap`)
+  },
 }
 
 export const estadisticaVentasApi = {
@@ -720,5 +884,283 @@ export const estadisticaVentasApi = {
       params,
     })
     return response.data
+  },
+}
+
+// ---------------------------------------------------------------------------
+// Estrategia
+//
+// El resto de la app describe lo que paso. Esto propone que hacer: Damian
+// declara un objetivo con una ventana, fija una meta por sucursal, y el motor
+// cruza el pronostico con la elasticidad al clima medida sobre la huella.
+//
+// La meta va en PORCENTAJE sobre lo esperado para el clima de cada dia, no en
+// pesos: un monto fijo mide el verano, no la gestion.
+// ---------------------------------------------------------------------------
+
+export type MetricaObjetivo = 'FACTURACION' | 'MARGEN' | 'KILOS'
+export type EstadoObjetivo = 'VIGENTE' | 'CERRADO'
+export type EstadoSugerencia = 'SUGERIDA' | 'ACEPTADA' | 'DESCARTADA' | 'VENCIDA'
+export type TipoSugerencia = 'OPERATIVO' | 'PROMO' | 'SOBREVENTA' | 'MIX'
+
+export interface ObjetivoFila {
+  objetivo_id: number
+  nombre: string
+  metrica: MetricaObjetivo
+  fecha_desde: string
+  fecha_hasta: string
+  estado: EstadoObjetivo
+  notas: string | null
+  creado_por: string | null
+  creado_el: string
+  /** Cuando se le aviso a los responsables. Nulo = todavia no salio el mail. */
+  avisado_el: string | null
+  sucursales: number
+  sugerencias: number
+  pendientes: number
+  /** Negativo: la ventana ya paso y el objetivo sigue abierto. */
+  dias_restantes: number
+}
+
+export interface ObjetivoSucursal {
+  sucursal: number
+  /** Meta en % sobre lo esperado para el clima, no en pesos. */
+  meta_pct: number
+  responsable: string | null
+  mail: string | null
+  notas: string | null
+  /** Cuando se le aviso a ESTA sucursal. Nulo = todavia no. */
+  avisado_el: string | null
+  /**
+   * El error tipico del modelo acumulado sobre una ventana de este largo. Es el
+   * piso de lo medible: una meta por debajo no se distingue del ruido.
+   */
+  ruido_ventana_pct: number | null
+}
+
+export interface Sugerencia {
+  sugerencia_id: number
+  /** Nulo = aplica a todas las sucursales del objetivo. */
+  sucursal: number | null
+  /** Nulo = vale para toda la ventana, no para un dia puntual. */
+  fecha: string | null
+  tipo: TipoSugerencia
+  titulo: string
+  detalle: string | null
+  /** El numero que respalda la sugerencia, congelado al generarla. */
+  evidencia: string | null
+  estado: EstadoSugerencia
+  decidido_por: string | null
+  decidido_el: string | null
+  comentario: string | null
+}
+
+export interface ObjetivoDetalle {
+  objetivo: ObjetivoFila | null
+  sucursales: ObjetivoSucursal[]
+  sugerencias: Sugerencia[]
+}
+
+export interface CrearObjetivo {
+  nombre: string
+  metrica: MetricaObjetivo
+  /** YYYY-MM-DD */
+  fecha_desde: string
+  fecha_hasta: string
+  notas?: string | null
+  sucursales: Array<{
+    sucursal: number
+    meta_pct: number
+    responsable?: string | null
+    mail?: string | null
+  }>
+}
+
+export interface PronosticoDia {
+  sucursal: number
+  dia: string
+  /** 1 = lunes .. 7 = domingo */
+  dia_semana: number
+  tmax: number | null
+  tmin: number | null
+  /** Maxima de ayer: es lo que define el salto termico. */
+  tmax_ayer: number | null
+  llueve: number
+  horas_lluvia: number
+  lluvia_mm: number | null
+  /**
+   * Que porcentaje de la venta del dia cae en horas con lluvia.
+   *
+   * Es LA variable de lluvia, no `llueve`. Medido sobre 2024-2026, un dia con
+   * menos del 10% expuesto no se distingue de uno seco, y uno con mas de la
+   * mitad vende ~30% menos que un dia seco de la misma temperatura. Llover once
+   * horas de madrugada y llover doce encima de la tarde son el mismo `llueve` y
+   * dias opuestos.
+   */
+  exposicion: number | null
+  /** 0 nada · 1 hasta 10% · 2 10-25% · 3 25-50% · 4 mas de 50% */
+  tramo_lluvia: number | null
+  /** Cuanto cuesta ese tramo contra un dia seco, en esa sucursal. */
+  impacto_pct: number | null
+  /** Dias de anticipacion. Mas alto, menos confiable. */
+  anticipacion: number
+}
+
+/*
+ * Medicion: objetivo contra realidad.
+ *
+ * El desvio nunca va solo: viaja con el ruido al lado. Un +8% sobre un modelo
+ * que se equivoca +-10% no dice nada, y sin ese numero se leeria como un logro.
+ */
+
+export interface MedicionSucursal {
+  sucursal: number
+  meta_pct: number
+  dias: number
+  dias_cumplidos: number
+  esperado: number
+  real: number
+  desvio_pct: number | null
+  cumple: boolean
+  /** Cuanto se equivoca el modelo en UN dia, tipicamente. */
+  error_tipico_pct: number | null
+  /** Lo mismo acumulado sobre la ventana. Es el piso de lo medible. */
+  ruido_ventana_pct: number | null
+  /** False cuando el desvio no se despega del ruido: no dice ni si ni no. */
+  concluyente: boolean
+}
+
+export interface MedicionDia {
+  sucursal: number
+  fecha: string
+  tmax: number | null
+  tmax_ayer: number | null
+  llovio: boolean | null
+  /** Que porcentaje de la venta del dia cayo en horas con lluvia. */
+  expos_lluvia: number | null
+  factor_salto: number | null
+  esperado: number | null
+  real: number | null
+  desvio_pct: number | null
+  meta_pct: number | null
+  cumple: boolean | null
+  error_tipico_pct: number | null
+  /** Con que precision se estimo. Un nivel flojo hay que verlo. */
+  nivel_modelo: string | null
+  calculado_el: string
+}
+
+export interface Medicion {
+  sucursales: MedicionSucursal[]
+  dias: MedicionDia[]
+}
+
+export interface AvisoSucursal {
+  sucursal: number
+  nombre: string
+  mail: string | null
+  enviado: boolean
+  /** Cuantas acciones le tocaban. Cero explica un envio omitido. */
+  acciones: number
+  /** Por que no se envio, cuando no se envio. */
+  motivo: string | null
+}
+
+export interface AvisoResultado {
+  enviados: number
+  omitidos: number
+  detalle: AvisoSucursal[]
+  objetivo: ObjetivoDetalle | null
+}
+
+export const estrategiaApi = {
+  async listarObjetivos(p: { estado?: EstadoObjetivo; top?: number } = {}) {
+    const params: Record<string, string | number> = { top: p.top ?? 50 }
+    if (p.estado) params.estado = p.estado
+    const r = await apiClient.get<ObjetivoFila[]>('/estrategia/objetivos', { params })
+    return r.data
+  },
+
+  async obtenerObjetivo(objetivoId: number) {
+    const r = await apiClient.get<ObjetivoDetalle>(`/estrategia/objetivos/${objetivoId}`)
+    return r.data
+  },
+
+  async crearObjetivo(datos: CrearObjetivo) {
+    const r = await apiClient.post<ObjetivoDetalle>('/estrategia/objetivos', datos)
+    return r.data
+  },
+
+  /**
+   * Rehace las sugerencias que nadie decidio todavia. Las aceptadas y
+   * descartadas quedan como estan: son decisiones tomadas y sirven para medir.
+   */
+  async regenerar(objetivoId: number) {
+    const r = await apiClient.post<ObjetivoDetalle>(
+      `/estrategia/objetivos/${objetivoId}/sugerencias`,
+    )
+    return r.data
+  },
+
+  async decidir(sugerenciaId: number, estado: EstadoSugerencia, comentario?: string) {
+    const r = await apiClient.put<Sugerencia>(`/estrategia/sugerencias/${sugerenciaId}`, {
+      estado,
+      comentario: comentario ?? null,
+    })
+    return r.data
+  },
+
+  async cerrar(objetivoId: number) {
+    await apiClient.post(`/estrategia/objetivos/${objetivoId}/cerrar`)
+  },
+
+  /**
+   * Manda a cada responsable las acciones aceptadas de su local.
+   *
+   * Con `prueba` el mail sale igual pero solo a la casilla de copia, y no
+   * marca nada como avisado: sirve para ver como queda antes de mandarlo.
+   */
+  async avisar(objetivoId: number, prueba = false) {
+    const r = await apiClient.post<AvisoResultado>(
+      `/estrategia/objetivos/${objetivoId}/avisar`,
+      null,
+      { params: prueba ? { prueba: true } : {} },
+    )
+    return r.data
+  },
+
+  /** Lee la medicion que ya calculo la tarea diaria. No recalcula. */
+  async medicion(objetivoId: number) {
+    const r = await apiClient.get<Medicion>(`/estrategia/objetivos/${objetivoId}/medicion`)
+    return r.data
+  },
+
+  /**
+   * Recalcula la medicion ahora.
+   *
+   * Normalmente no hace falta: la tarea de las 12:30 la deja hecha. Sirve para
+   * un objetivo recien creado sobre un periodo ya pasado, o cuando se recargo
+   * una jornada vieja.
+   */
+  async recalcularMedicion(objetivoId: number) {
+    const r = await apiClient.post<Medicion>(`/estrategia/objetivos/${objetivoId}/medicion`)
+    return r.data
+  },
+
+  /**
+   * URL del mail tal como lo va a recibir esa sucursal, sin enviarlo.
+   *
+   * Devuelve la direccion y no el contenido porque se abre en una pestana: un
+   * mail se mira como mail, no como un bloque de HTML dentro de un modal.
+   */
+  vistaPreviaUrl(objetivoId: number, sucursal: number) {
+    return `${API_BASE_URL}/estrategia/objetivos/${objetivoId}/aviso/vista-previa?sucursal=${sucursal}`
+  },
+
+  async pronostico(p: { sucursal?: number; dias?: number } = {}) {
+    const params: Record<string, number> = { dias: p.dias ?? 7 }
+    if (p.sucursal) params.sucursal = p.sucursal
+    const r = await apiClient.get<PronosticoDia[]>('/estrategia/pronostico', { params })
+    return r.data
   },
 }
