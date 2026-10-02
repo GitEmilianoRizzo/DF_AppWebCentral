@@ -21,6 +21,9 @@
    -----------
    Borra (BASE_ORIGEN, FECHA_OPERATIVA) antes de insertar, asi que se puede
    reprocesar un dia cuantas veces haga falta. La PK ademas impide duplicar.
+   Borrado e insercion van en una sola transaccion, y si la recarga trae menos
+   lineas que las que habia se descarta (estado RETENIDO): ver el comentario
+   junto al COMMIT. Cambio del 01/10/2026, al empezar a recargar 7 dias.
 
    QUE SE CARGA
    ------------
@@ -106,6 +109,13 @@ BEGIN
         SET @borradas = 0; SET @insertadas = 0;
 
         BEGIN TRY
+            /* Borrado e insercion van en UNA transaccion. Con la recarga de los
+               ultimos dias (usp_CargarHuellaPendiente) esto ya no pisa jornadas
+               vacias sino jornadas con datos: si el INSERT fallaba despues del
+               DELETE, la jornada quedaba borrada. En @Debug se deshace al
+               final: antes el modo de prueba borraba la jornada de verdad. */
+            BEGIN TRAN;
+
             DELETE FROM dbo.TRX_HUELLA_VENTA
             WHERE BASE_ORIGEN = @base AND FECHA_OPERATIVA = @FechaOperativa;
             SET @borradas = @@ROWCOUNT;
@@ -477,6 +487,7 @@ SET @pFilas = @@ROWCOUNT;';
 
             IF @Debug = 1
             BEGIN
+                ROLLBACK;
                 PRINT '--- ' + @base + ' ---';
                 SELECT @sql AS SQL_GENERADO, @desde AS DESDE, @hasta AS HASTA;
             END
@@ -488,29 +499,54 @@ SET @pFilas = @@ROWCOUNT;';
                      @pBase = @base, @pZona = @zona, @pFechaOp = @FechaOperativa,
                      @pDesde = @desde, @pHasta = @hasta, @pFilas = @insertadas OUTPUT;
 
-                INSERT dbo.LOG_CARGA_HUELLA
-                    (BASE_ORIGEN, FECHA_OPERATIVA, DESDE, HASTA, FILAS_BORRADAS,
-                     FILAS_INSERTADAS, TICKETS, IMPORTE, SEGUNDOS, ESTADO, MENSAJE)
-                -- Una jornada sin ventas no es un exito: puede ser que la base
-                -- de origen todavia no sincronizo. Se marca distinto para que
-                -- salte a la vista en la bitacora.
-                SELECT @base, @FechaOperativa, @desde, @hasta, @borradas, @insertadas,
-                       COUNT(DISTINCT CASE WHEN ES_FACTURABLE = 1 THEN TICKET_KEY END),
-                       ISNULL(SUM(IMPORTE), 0), DATEDIFF(second, @t0, SYSDATETIME()),
-                       CASE WHEN @insertadas = 0 THEN 'VACIO' ELSE 'OK' END,
-                       CASE WHEN @insertadas = 0
-                            THEN 'La jornada no trajo ninguna venta. Verificar si la base de origen ya sincronizo ese dia.'
-                       END
-                FROM dbo.TRX_HUELLA_VENTA
-                WHERE BASE_ORIGEN = @base AND FECHA_OPERATIVA = @FechaOperativa;
+                /* RETENIDO: la recarga trajo MENOS lineas de las que ya habia.
+                   Una venta no desaparece del origen (se anula, y la anulada
+                   tambien se carga), asi que menos lineas significa que la copia
+                   de origen esta incompleta o vieja: por ejemplo, un restore
+                   que no corrio. Se deshace y queda lo anterior. No es ERROR
+                   para no cortar la tarea; el cuadre de la huella lo marca. */
+                IF @borradas > 0 AND @insertadas < @borradas
+                BEGIN
+                    ROLLBACK;
+                    INSERT dbo.LOG_CARGA_HUELLA
+                        (BASE_ORIGEN, FECHA_OPERATIVA, DESDE, HASTA, FILAS_BORRADAS,
+                         FILAS_INSERTADAS, SEGUNDOS, ESTADO, MENSAJE)
+                    VALUES (@base, @FechaOperativa, @desde, @hasta, 0, 0,
+                            DATEDIFF(second, @t0, SYSDATETIME()), 'RETENIDO',
+                            'La recarga traia ' + CAST(@insertadas AS varchar(10))
+                            + ' lineas contra ' + CAST(@borradas AS varchar(10))
+                            + ' ya cargadas. Se conservo lo anterior: revisar la base de origen.');
+                END
+                ELSE
+                BEGIN
+                    COMMIT;
+
+                    INSERT dbo.LOG_CARGA_HUELLA
+                        (BASE_ORIGEN, FECHA_OPERATIVA, DESDE, HASTA, FILAS_BORRADAS,
+                         FILAS_INSERTADAS, TICKETS, IMPORTE, SEGUNDOS, ESTADO, MENSAJE)
+                    -- Una jornada sin ventas no es un exito: puede ser que la base
+                    -- de origen todavia no sincronizo. Se marca distinto para que
+                    -- salte a la vista en la bitacora.
+                    SELECT @base, @FechaOperativa, @desde, @hasta, @borradas, @insertadas,
+                           COUNT(DISTINCT CASE WHEN ES_FACTURABLE = 1 THEN TICKET_KEY END),
+                           ISNULL(SUM(IMPORTE), 0), DATEDIFF(second, @t0, SYSDATETIME()),
+                           CASE WHEN @insertadas = 0 THEN 'VACIO' ELSE 'OK' END,
+                           CASE WHEN @insertadas = 0
+                                THEN 'La jornada no trajo ninguna venta. Verificar si la base de origen ya sincronizo ese dia.'
+                           END
+                    FROM dbo.TRX_HUELLA_VENTA
+                    WHERE BASE_ORIGEN = @base AND FECHA_OPERATIVA = @FechaOperativa;
+                END
             END
         END TRY
         BEGIN CATCH
             SET @msg = LEFT(ERROR_MESSAGE(), 1000);
+            -- El borrado se deshace con el resto: la jornada queda como estaba.
+            IF @@TRANCOUNT > 0 ROLLBACK;
             INSERT dbo.LOG_CARGA_HUELLA
                 (BASE_ORIGEN, FECHA_OPERATIVA, DESDE, HASTA, FILAS_BORRADAS,
                  FILAS_INSERTADAS, SEGUNDOS, ESTADO, MENSAJE)
-            VALUES (@base, @FechaOperativa, @desde, @hasta, @borradas, 0,
+            VALUES (@base, @FechaOperativa, @desde, @hasta, 0, 0,
                     DATEDIFF(second, @t0, SYSDATETIME()), 'ERROR', @msg);
 
             CLOSE cur; DEALLOCATE cur;

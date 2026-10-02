@@ -138,12 +138,18 @@ GO
    que usar cuando se recargo la huella de una jornada vieja.
 
    @Rehacer = 1 lo reconstruye todo desde cero.
+
+   @DiasRecarga: lo incremental arranca, como mucho, @DiasRecarga jornadas
+   antes de la ultima de la huella. Acompaña a la recarga de 7 dias de
+   usp_CargarHuellaPendiente: si la huella de esas jornadas cambio, el
+   agregado tiene que cambiar con ella. Tiene que ser >= el de la huella.
    --------------------------------------------------------------------------- */
 CREATE OR ALTER PROCEDURE dbo.usp_CargarAggVentaDia
-    @Desde      date        = NULL,
-    @Hasta      date        = NULL,
-    @Rehacer    bit         = 0,
-    @BaseOrigen varchar(30) = 'SRV_GRIDO_ZSUR'
+    @Desde       date        = NULL,
+    @Hasta       date        = NULL,
+    @Rehacer     bit         = 0,
+    @BaseOrigen  varchar(30) = 'SRV_GRIDO_ZSUR',
+    @DiasRecarga int         = 7
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -172,6 +178,9 @@ BEGIN
            tarea corre mientras esa jornada todavia se estaba completando, el
            total guardado quedo corto. Recargarla cuesta un dia de lectura. */
         SET @Desde = ISNULL(@ultimo, @minHuella);
+        IF DATEADD(day, 1 - ISNULL(@DiasRecarga, 0), @maxHuella) < @Desde
+            SET @Desde = DATEADD(day, 1 - ISNULL(@DiasRecarga, 0), @maxHuella);
+        IF @Desde < @minHuella SET @Desde = @minHuella;
         SET @Hasta = @maxHuella;
     END
 

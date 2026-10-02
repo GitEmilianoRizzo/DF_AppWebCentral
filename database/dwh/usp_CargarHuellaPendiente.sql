@@ -25,6 +25,17 @@
    sincronizado, la proxima corrida la vuelve a intentar sola. Un dia sin
    ventas en el medio no se reintenta para siempre: el MAX ya lo paso.
 
+   RECARGA DE LOS ULTIMOS @DiasRecarga DIAS (agregado el 01/10/2026)
+   -----------------------------------------------------------------
+   Los locales sincronizan con el servidor central cuando pueden, a veces dias
+   despues. Una jornada que se cargo con la sincronizacion a medias movia el
+   MAX y no se volvia a mirar nunca: Escalada 26/09 quedo con 122 tickets de
+   267 (falto la caja 1 entera y el ultimo turno de la caja 2).
+   Por eso cada corrida, ademas de avanzar, vuelve a cargar las ultimas
+   @DiasRecarga jornadas hasta ayer. Cuesta poco: unas 1.200 filas por
+   jornada, una transaccion por dia, y la base esta en recuperacion SIMPLE.
+   Lo que sincronice despues de esa ventana lo detecta usp_CuadreHuella.
+
    Creado: 2026-09-15
    =========================================================================== */
 
@@ -44,6 +55,9 @@ CREATE PROCEDURE dbo.usp_CargarHuellaPendiente
        un alta nueva dispare sin querer un backfill de anos. */
     @DesdeSiVacia   date    = NULL,
     @HoraCorte      time(0) = '02:00',
+    /* Jornadas ya cargadas que se vuelven a cargar en cada corrida. 0 = solo
+       avanzar, como antes. */
+    @DiasRecarga    int     = 7,
     @Debug          bit     = 0
 AS
 BEGIN
@@ -59,9 +73,18 @@ BEGIN
         RETURN;
     END
 
+    IF @DiasRecarga IS NULL OR @DiasRecarga < 0
+    BEGIN
+        RAISERROR('usp_CargarHuellaPendiente: @DiasRecarga debe ser 0 o mas.', 16, 1);
+        RETURN;
+    END
+
     DECLARE @res TABLE (
         BASE_ORIGEN sysname, DESDE date, HASTA date,
         JORNADAS int, TRUNCADO bit, MENSAJE varchar(200));
+
+    -- Primera jornada de la ventana de recarga (si @DiasRecarga = 0 queda despues de ayer).
+    DECLARE @inicioRecarga date = DATEADD(day, 1 - @DiasRecarga, @ayer);
 
     /* Marca de agua de la bitacora ANTES de empezar. El control de errores del
        final mira solo lo que escribio ESTA corrida.
@@ -71,7 +94,7 @@ BEGIN
        que no tener alarma: ensena a ignorarla. */
     DECLARE @logIdInicio int = ISNULL((SELECT MAX(LOG_ID) FROM dbo.LOG_CARGA_HUELLA), 0);
 
-    DECLARE @base sysname, @ultima date, @d date, @hasta date, @n int, @trunc bit;
+    DECLARE @base sysname, @primera date, @ultima date, @d date, @hasta date, @n int, @trunc bit;
 
     /* La dimension de costos de insumo se refresca ANTES de cargar. Si un
        insumo cambio de precio ayer, la jornada de ayer tiene que costearse con
@@ -96,10 +119,15 @@ BEGIN
 
     WHILE @@FETCH_STATUS = 0
     BEGIN
-        SELECT @ultima = MAX(FECHA_OPERATIVA)
+        SELECT @primera = MIN(FECHA_OPERATIVA), @ultima = MAX(FECHA_OPERATIVA)
         FROM dbo.TRX_HUELLA_VENTA WHERE BASE_ORIGEN = @base;
 
         SET @d = CASE WHEN @ultima IS NULL THEN @DesdeSiVacia ELSE DATEADD(day, 1, @ultima) END;
+        /* La ventana de recarga corre el arranque hacia atras, pero nunca antes
+           de la primera jornada que tiene la base: una base recien dada de alta
+           no tiene que hacer un backfill que nadie pidio. */
+        IF @ultima IS NOT NULL AND @inicioRecarga < @d
+            SET @d = CASE WHEN @inicioRecarga < @primera THEN @primera ELSE @inicioRecarga END;
         SET @n = 0;
         SET @trunc = 0;
 
