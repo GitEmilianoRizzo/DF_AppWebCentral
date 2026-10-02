@@ -24,8 +24,14 @@
      TARJETAS no permite saber en que turno se activo cada tarjeta, asi que el
      informe las carga todas al primer turno. Repetirlo en cada turno duplicaria
      el total.
-   - PROMOS va en cero: el informe todavia no lo calcula, la columna esta
-     reservada.
+   - PROMOS es la venta de las lineas que forman parte de una PROMOCION
+     (LINEA_ES_PROMOCION), con el mismo criterio que Estadistica de Ventas.
+     No incluye sobreventa (tiene sus columnas) ni canjes de puntos. Sale de
+     las lineas, a precio de lista, y no de la cabecera: la cabecera es del
+     ticket entero y no se puede partir por linea.
+   - KILOS_CLUB acompaña a VENTAS_CLUB: el %VCG se mide sobre kilos, no
+     sobre pesos (pedido de Damian del 01/10/2026). 100 kg vendidos y 40 a
+     socios = 40%.
 
    Creado: 2026-09-16
    =========================================================================== */
@@ -80,7 +86,8 @@ BEGIN
         TURNO int, CAJA int, CAJERO varchar(20),
         TICKET_KEY varchar(90), IMPORTE numeric(16,4),
         ES_ANULADA bit, ES_CLUB bit, SOBREVENTA varchar(10),
-        PRIMERA datetime, ULTIMA datetime, KILOS numeric(28,8)
+        PRIMERA datetime, ULTIMA datetime, KILOS numeric(28,8),
+        PROMOS numeric(28,8)
     );
 
     INSERT #TK
@@ -91,7 +98,9 @@ BEGIN
            MAX(CAST(h.ES_CLUB_GRIDO AS int)),
            MAX(h.SOBREVENTA),
            MIN(h.FECHA_HORA), MAX(h.FECHA_HORA),
-           SUM(h.KILOS)
+           SUM(h.KILOS),
+           -- IMPORTE ya vale cero en las PROMO=2 y en las anuladas.
+           SUM(CASE WHEN h.LINEA_ES_PROMOCION = 1 THEN h.IMPORTE ELSE 0 END)
     FROM dbo.TRX_HUELLA_VENTA h
     WHERE h.BASE_ORIGEN = @BaseOrigen
       AND h.FECHA_OPERATIVA BETWEEN @FechaDesde AND @FechaHasta
@@ -143,6 +152,8 @@ BEGIN
             SV_ACEPTADAS  = SUM(CASE WHEN ES_ANULADA = 0 AND SOBREVENTA = 'ACEPTADA'  THEN 1 ELSE 0 END),
             SV_RECHAZADAS = SUM(CASE WHEN ES_ANULADA = 0 AND SOBREVENTA = 'RECHAZADA' THEN 1 ELSE 0 END),
             KILOS         = SUM(KILOS),
+            KILOS_CLUB    = SUM(CASE WHEN ES_ANULADA = 0 AND ES_CLUB = 1 THEN KILOS ELSE 0 END),
+            PROMOS        = SUM(CASE WHEN ES_ANULADA = 0 THEN PROMOS ELSE 0 END),
             PRIMERA       = MIN(CASE WHEN ES_ANULADA = 0 THEN PRIMERA END),
             ULTIMA        = MAX(CASE WHEN ES_ANULADA = 0 THEN ULTIMA END)
         FROM #TK
@@ -183,9 +194,10 @@ BEGIN
         Tickets = b.TICKETS,
         SvActivadas = b.SV_ACEPTADAS + b.SV_RECHAZADAS,
         SvAceptadas = b.SV_ACEPTADAS,
-        Promos  = CAST(0 AS numeric(16,4)),   -- reservado: el informe no lo calcula
+        Promos  = CAST(b.PROMOS AS numeric(16,4)),
         Socios  = CASE WHEN p.rn = 1 THEN ISNULL(s.SOCIOS, 0) ELSE 0 END,
         VentasClub = b.VENTAS_CLUB,
+        KilosClub  = CAST(ROUND(b.KILOS_CLUB, 1) AS numeric(12,1)),
         Anuladas   = b.ANULADAS,
         DifCaja    = ISNULL(t.TURDIFERENCIA, 0)
     FROM BASE b

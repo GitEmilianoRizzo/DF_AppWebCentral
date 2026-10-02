@@ -594,6 +594,8 @@ export interface InformeGridoFila {
   promos: number
   socios: number
   ventas_club: number
+  /** Kilos vendidos a socios Club Grido: el %VCG se mide sobre kilos. */
+  kilos_club: number
   anuladas: number
   dif_caja: number
 }

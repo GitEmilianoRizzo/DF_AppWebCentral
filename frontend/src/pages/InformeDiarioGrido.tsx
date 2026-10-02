@@ -40,12 +40,12 @@ const pct = (n: number | null) =>
 interface Totales {
   horas: number; kilos: number; ventas: number; tickets: number
   svAct: number; svAcep: number; promos: number; socios: number
-  club: number; anuladas: number; dif: number
+  club: number; kilosClub: number; anuladas: number; dif: number
 }
 
 const cero = (): Totales => ({
   horas: 0, kilos: 0, ventas: 0, tickets: 0, svAct: 0, svAcep: 0,
-  promos: 0, socios: 0, club: 0, anuladas: 0, dif: 0,
+  promos: 0, socios: 0, club: 0, kilosClub: 0, anuladas: 0, dif: 0,
 })
 
 function acumular(t: Totales, f: Fila): Totales {
@@ -59,6 +59,7 @@ function acumular(t: Totales, f: Fila): Totales {
     promos: t.promos + f.promos,
     socios: t.socios + f.socios,
     club: t.club + f.ventas_club,
+    kilosClub: t.kilosClub + f.kilos_club,
     anuladas: t.anuladas + f.anuladas,
     dif: t.dif + f.dif_caja,
   }
@@ -216,7 +217,7 @@ export function InformeDiarioGrido() {
               <Th>Promos ($)</Th><Th>%Promos</Th>
               <Th className="bg-[#1F618D]">Nuevos Socios</Th>
               <Th className="bg-[#1F618D]">Ventas Club Grido</Th>
-              <Th className="bg-[#1F618D]">%VCG /Ventas</Th>
+              <Th className="bg-[#1F618D]">%VCG /Kilos</Th>
               <Th>Anuladas</Th><Th>Dif. de Caja</Th>
             </tr>
           </thead>
@@ -259,7 +260,7 @@ export function InformeDiarioGrido() {
                     <Td>{pct(div(sub.promos, sub.ventas))}</Td>
                     <Td>{num(sub.socios)}</Td>
                     <Td>{money(sub.club)}</Td>
-                    <Td>{pct(div(sub.club, sub.ventas))}</Td>
+                    <Td>{pct(div(sub.kilosClub, sub.kilos))}</Td>
                     <Td>{num(sub.anuladas)}</Td>
                     <Td>{money(sub.dif)}</Td>
                   </tr>
@@ -290,7 +291,7 @@ export function InformeDiarioGrido() {
                         <Td>{pct(div(f.promos, f.ventas))}</Td>
                         <Td>{num(f.socios)}</Td>
                         <Td>{money(f.ventas_club)}</Td>
-                        <Td>{pct(div(f.ventas_club, f.ventas))}</Td>
+                        <Td>{pct(div(f.kilos_club, f.kilos))}</Td>
                         <Td>{num(f.anuladas)}</Td>
                         <Td>{money(f.dif_caja)}</Td>
                       </tr>
@@ -319,7 +320,7 @@ export function InformeDiarioGrido() {
                 <Td>{pct(div(total.promos, total.ventas))}</Td>
                 <Td>{num(total.socios)}</Td>
                 <Td>{money(total.club)}</Td>
-                <Td>{pct(div(total.club, total.ventas))}</Td>
+                <Td>{pct(div(total.kilosClub, total.kilos))}</Td>
                 <Td>{num(total.anuladas)}</Td>
                 <Td>{money(total.dif)}</Td>
               </tr>
@@ -329,8 +330,10 @@ export function InformeDiarioGrido() {
       </div>
 
       <p className="text-xs text-muted-foreground max-w-4xl leading-relaxed">
-        <strong className="font-medium">Promos</strong> va en cero porque el informe todavia no lo
-        calcula; la columna esta reservada. <strong className="font-medium">Nuevos socios</strong> se
+        <strong className="font-medium">Promos</strong> es la venta de los articulos vendidos en una
+        promocion, a precio de lista; no incluye sobreventas ni canjes de puntos.{' '}
+        <strong className="font-medium">%VCG</strong> son los kilos vendidos a socios Club Grido sobre
+        el total de kilos. <strong className="font-medium">Nuevos socios</strong> se
         imputa al primer turno de cada cajero en la jornada: las altas de tarjeta no guardan en que
         turno se hicieron, asi que repartirlas entre todos duplicaria el total.
       </p>

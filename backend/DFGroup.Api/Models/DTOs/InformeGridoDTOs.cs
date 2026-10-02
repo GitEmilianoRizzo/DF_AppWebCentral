@@ -53,7 +53,7 @@ public class InformeGridoFilaDto
     [JsonPropertyName("sv_aceptadas")]
     public int SvAceptadas { get; set; }
 
-    /// <summary>Reservado: el informe todavia no calcula promociones.</summary>
+    /// <summary>Venta de las lineas en PROMOCION (sin sobreventa ni canjes), a precio de lista.</summary>
     [JsonPropertyName("promos")]
     public decimal Promos { get; set; }
 
@@ -62,6 +62,10 @@ public class InformeGridoFilaDto
 
     [JsonPropertyName("ventas_club")]
     public decimal VentasClub { get; set; }
+
+    /// <summary>Kilos vendidos a socios Club Grido. Es la base del %VCG.</summary>
+    [JsonPropertyName("kilos_club")]
+    public decimal KilosClub { get; set; }
 
     [JsonPropertyName("anuladas")]
     public int Anuladas { get; set; }
