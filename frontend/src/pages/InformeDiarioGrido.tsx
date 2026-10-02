@@ -128,18 +128,6 @@ export function InformeDiarioGrido() {
 
   const total = useMemo(() => filas.reduce(acumular, cero()), [filas])
 
-  // "Cajas Delivery  Escalada: 2  Fiorito: 1  Lanus Oeste: 2", armado con lo
-  // que marca CFG_CAJA_DELIVERY y no con un texto fijo.
-  const cajasDelivery = useMemo(
-    () => grupos
-      .map((g) => ({
-        rotulo: g.rotulo,
-        cajas: [...new Set(g.filas.filter((f) => f.es_caja_delivery).map((f) => f.caja))].sort((a, b) => a - b),
-      }))
-      .filter((g) => g.cajas.length > 0),
-    [grupos],
-  )
-
   const COLS = 22
 
   return (
@@ -215,14 +203,6 @@ export function InformeDiarioGrido() {
           ALERTA
         </span>
         <span>%SV por debajo del estandar ({pct(UMBRAL_SV)})</span>
-        {cajasDelivery.length > 0 && (
-          <span className="ml-4 inline-flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="rounded px-2 py-1 bg-[#6C3483] text-white font-medium">Cajas Delivery</span>
-            {cajasDelivery.map((c) => (
-              <span key={c.rotulo}>{c.rotulo}: <strong className="text-foreground">{c.cajas.join(', ')}</strong></span>
-            ))}
-          </span>
-        )}
       </div>
 
       {error && (
@@ -328,7 +308,7 @@ export function InformeDiarioGrido() {
                         <Td>{f.turno}</Td>
                         {/* La caja de delivery dice DELI en lugar del numero, con el
                             mismo estilo que el resto (pedido de Damian). El numero
-                            sigue en la leyenda "Cajas Delivery" de arriba. */}
+                            queda en la ayuda emergente. */}
                         <Td>
                           {f.es_caja_delivery
                             ? <span title={`Caja ${f.caja} - delivery`}>DELI</span>
