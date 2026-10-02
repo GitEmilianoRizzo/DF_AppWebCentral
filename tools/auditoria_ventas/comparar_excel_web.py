@@ -37,13 +37,16 @@ def leer_excel(ruta):
         turno = ws.cell(r, 2).value
         if not isinstance(turno, int):
             continue
-        caja_txt = str(ws.cell(r, 3).value)
+        # La caja de delivery dice "DELI" en lugar del numero: la fila se
+        # identifica por turno y cajero (el turno ya es de una sola caja).
+        caja_txt = str(ws.cell(r, 3).value).strip()
         cajero = str(ws.cell(r, 1).value).strip().lower()
-        filas[(turno, int(caja_txt.split()[0]), cajero)] = {
+        filas[(turno, cajero)] = {
+            "caja": None if caja_txt == "DELI" else int(caja_txt),
             "ventas": ws.cell(r, 7).value, "kilos": ws.cell(r, 6).value,
             "tickets": ws.cell(r, 9).value, "promos": ws.cell(r, 13).value or 0,
             "ventas_club": ws.cell(r, 16).value, "kilos_club": ws.cell(r, 17).value or 0,
-            "delivery": caja_txt.endswith("DEL"),
+            "delivery": caja_txt == "DELI",
             "sens": ws.cell(r, 21).value, "mm": ws.cell(r, 22).value,
         }
     return filas
@@ -66,7 +69,7 @@ def comparar(fecha, carpeta):
     difs = []
     vistos = set()
     for w in web:
-        clave = (w["Turno"], w["Caja"], w["Cajero"].strip().lower())
+        clave = (w["Turno"], w["Cajero"].strip().lower())
         vistos.add(clave)
         e = excel.get(clave)
         if e is None:
@@ -78,6 +81,8 @@ def comparar(fecha, carpeta):
             "ventas_club": (w["VentasClub"], e["ventas_club"]),
             "kilos_club": (w.get("KilosClub"), e["kilos_club"]),
             "delivery": (bool(w.get("EsCajaDelivery")), e["delivery"]),
+            # Si no es delivery, el numero de caja tiene que coincidir.
+            "caja": (w["Caja"], w["Caja"] if e["delivery"] else e["caja"]),
             "sens": (w.get("SensacionTermica"), e["sens"]), "mm": (w.get("LluviaMm"), e["mm"]),
         }
         for k, (a, b) in pares.items():
@@ -88,7 +93,7 @@ def comparar(fecha, carpeta):
             if not igual:
                 difs.append(f"turno {w['Turno']} caja {w['Caja']} {w['Cajero']} {k}: web={a} excel={b}")
     for clave in set(excel) - vistos:
-        difs.append(f"turno {clave[0]} caja {clave[1]} {clave[2]}: esta en el Excel y no en la web")
+        difs.append(f"turno {clave[0]} {clave[1]}: esta en el Excel y no en la web")
 
     print(f"{fecha}: {len(excel)} filas, {len(difs)} diferencia(s)")
     for d in difs:

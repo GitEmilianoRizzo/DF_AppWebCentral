@@ -734,12 +734,10 @@ def escribir_subtotal(ws, r, nombre, first, last, bg, clima_suc=(None, None)):
 def escribir_cajero(ws, r, fila, bg_std, bg_sv, bg_ly):
     set_cell(ws, r, 1, f"    {fila['cajero']}", bg_std, "FF1A1A2E", h="left")
     set_cell(ws, r, 2, fila["turno"], bg_std, "FF5D6D7E")
-    # La caja de delivery se marca en la propia celda: "2 DEL" en violeta.
-    # La leyenda "Cajas Delivery" de arriba dice cual es en cada sucursal.
-    if fila.get("es_delivery"):
-        set_cell(ws, r, 3, f"{fila['caja']} DEL", COLOR_DELIVERY, "FFFFFFFF", bold=True)
-    else:
-        set_cell(ws, r, 3, fila["caja"], bg_std, "FF5D6D7E")
+    # La caja de delivery dice "DELI" en lugar del numero, con el mismo estilo
+    # que el resto de la columna (pedido de Damian). El numero sigue en la
+    # leyenda "Cajas Delivery" de arriba.
+    set_cell(ws, r, 3, "DELI" if fila.get("es_delivery") else fila["caja"], bg_std, "FF5D6D7E")
     set_cell(ws, r, 4, fila["horario"], bg_std, "FF1A1A2E")
     set_cell(ws, r, 5, fila["horas"], bg_std, "FF1A1A2E")
     set_cell(ws, r, 6, fila["kilos"], bg_std, "FF1A1A2E")

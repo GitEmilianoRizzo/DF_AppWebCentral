@@ -326,16 +326,13 @@ export function InformeDiarioGrido() {
                         {variosDias && <Td className="tabular-nums">{f.fecha_operativa.slice(0, 10)}</Td>}
                         <Td className="text-left pl-6">{f.cajero}</Td>
                         <Td>{f.turno}</Td>
+                        {/* La caja de delivery dice DELI en lugar del numero, con el
+                            mismo estilo que el resto (pedido de Damian). El numero
+                            sigue en la leyenda "Cajas Delivery" de arriba. */}
                         <Td>
-                          {f.caja}
-                          {f.es_caja_delivery && (
-                            <span
-                              title="Caja de delivery"
-                              className="ml-1 rounded px-1 py-px text-[9px] font-semibold bg-[#6C3483] text-white"
-                            >
-                              DEL
-                            </span>
-                          )}
+                          {f.es_caja_delivery
+                            ? <span title={`Caja ${f.caja} - delivery`}>DELI</span>
+                            : f.caja}
                         </Td>
                         <Td>{f.horario}</Td>
                         <Td>{num(f.horas, 1)}</Td>
@@ -400,7 +397,7 @@ export function InformeDiarioGrido() {
         <strong className="font-medium">%VCG</strong> son los kilos vendidos a socios Club Grido sobre
         el total de kilos. <strong className="font-medium">Clima</strong>: sensacion termica promedio y
         lluvia en las horas en que el turno tuvo ventas; en el subtotal, las de la sucursal en toda la
-        jornada. <strong className="font-medium">DEL</strong> marca la caja de delivery.{' '}
+        jornada. <strong className="font-medium">DELI</strong> es la caja de delivery.{' '}
         <strong className="font-medium">Nuevos socios</strong> se
         imputa al primer turno de cada cajero en la jornada: las altas de tarjeta no guardan en que
         turno se hicieron, asi que repartirlas entre todos duplicaria el total.
