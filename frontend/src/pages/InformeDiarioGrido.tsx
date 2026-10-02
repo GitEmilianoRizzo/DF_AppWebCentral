@@ -67,6 +67,9 @@ function acumular(t: Totales, f: Fila): Totales {
 
 const div = (a: number, b: number) => (b === 0 ? null : a / b)
 
+// Letra de las columnas de referencia (turno, caja, horario, horas).
+const GRIS_REF = 'text-[#C3C3C3]'
+
 const grados = (n: number | null) => (n === null ? '' : num(n, 1) + '°')
 const mm = (n: number | null) => (n === null ? '' : num(n, 1))
 
@@ -305,17 +308,20 @@ export function InformeDiarioGrido() {
                       <tr key={`${f.fecha_operativa}-${f.turno}-${f.caja}-${f.cajero}`} className={color.fila}>
                         {variosDias && <Td className="tabular-nums">{f.fecha_operativa.slice(0, 10)}</Td>}
                         <Td className="text-left pl-6">{f.cajero}</Td>
-                        <Td>{f.turno}</Td>
+                        {/* Turno, caja, horario y horas son datos de referencia, no
+                            de rendimiento: van en gris claro (#C3C3C3, pedido de
+                            Damian) para que la vista vaya a las metricas. */}
+                        <Td className={GRIS_REF}>{f.turno}</Td>
                         {/* La caja de delivery dice DELI en lugar del numero, con el
                             mismo estilo que el resto (pedido de Damian). El numero
                             queda en la ayuda emergente. */}
-                        <Td>
+                        <Td className={GRIS_REF}>
                           {f.es_caja_delivery
                             ? <span title={`Caja ${f.caja} - delivery`}>DELI</span>
                             : f.caja}
                         </Td>
-                        <Td>{f.horario}</Td>
-                        <Td>{num(f.horas, 1)}</Td>
+                        <Td className={GRIS_REF}>{f.horario}</Td>
+                        <Td className={GRIS_REF}>{num(f.horas, 1)}</Td>
                         <Td>{num(f.kilos, 1)}</Td>
                         <Td>{money(f.ventas)}</Td>
                         <Td>{f.tickets ? money(f.ventas / f.tickets) : ''}</Td>
