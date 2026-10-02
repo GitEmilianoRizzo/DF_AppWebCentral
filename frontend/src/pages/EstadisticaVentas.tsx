@@ -104,8 +104,12 @@ const pct = (n: number | null, d = 2) =>
    corrida, que es como se teclea rapido:
        25/09/2026 02:00
        250920260200
-       25/09/2026        -> asume 00:00
-       25092026          -> asume 00:00
+       25/09/2026        -> asume 02:00
+       25092026          -> asume 02:00
+
+   La hora que se asume es la del ARRANQUE DE LA JORNADA (02:00) y no la
+   medianoche: escribir solo las fechas tiene que dar jornadas enteras, que es
+   lo que se compara contra SmartFran.
    --------------------------------------------------------------------------- */
 const dosDig = (n: number) => String(n).padStart(2, '0')
 
@@ -113,6 +117,16 @@ const dosDig = (n: number) => String(n).padStart(2, '0')
 const aTexto = (d: Date) =>
   `${dosDig(d.getDate())}/${dosDig(d.getMonth() + 1)}/${d.getFullYear()} ` +
   `${dosDig(d.getHours())}:${dosDig(d.getMinutes())}`
+
+/**
+ * La hora con la que arranca todo cuando no se escribe ninguna.
+ *
+ * Son las 02:00 y no las 00:00 porque la JORNADA COMERCIAL va de las 02:00 a
+ * las 02:00 del dia siguiente. Poner 00:00 por defecto obligaba a corregir la
+ * hora en cada consulta, y olvidarse de hacerlo daba numeros que no coinciden
+ * con SmartFran sin ningun aviso: se estarian mezclando dos medias jornadas.
+ */
+const HORA_JORNADA = 2
 
 /** Texto tipeado -> Date, o null si no se entiende. */
 function aFecha(texto: string): Date | null {
@@ -122,7 +136,8 @@ function aFecha(texto: string): Date | null {
   const dia = +n.slice(0, 2)
   const mes = +n.slice(2, 4)
   const anio = +n.slice(4, 8)
-  const hora = n.length === 12 ? +n.slice(8, 10) : 0
+  // Sin hora tipeada se asume el inicio de la jornada, no la medianoche.
+  const hora = n.length === 12 ? +n.slice(8, 10) : HORA_JORNADA
   const min = n.length === 12 ? +n.slice(10, 12) : 0
 
   if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null
@@ -141,14 +156,26 @@ const aISO = (d: Date) =>
   `${d.getFullYear()}-${dosDig(d.getMonth() + 1)}-${dosDig(d.getDate())}` +
   `T${dosDig(d.getHours())}:${dosDig(d.getMinutes())}`
 
+/**
+ * El periodo con el que abre la pantalla: del 1 del mes a hoy, PEGADO A LA
+ * JORNADA.
+ *
+ * Las dos puntas caen a las 02:00, asi que el rango son jornadas comerciales
+ * enteras. "Hasta hoy a las 02:00" cierra la ultima jornada completa, que es
+ * ademas la ultima que tiene datos: la huella se carga todos los dias a las
+ * 12:30 con las jornadas ya terminadas.
+ *
+ * Antes abria de "1 del mes 00:00" a "ahora mismo", y eso cortaba la primera y
+ * la ultima jornada por la mitad. Los totales no coincidian con SmartFran y no
+ * habia forma de darse cuenta mirando la pantalla.
+ */
 const inicioDeMes = () => {
   const d = new Date()
-  return new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0)
+  return new Date(d.getFullYear(), d.getMonth(), 1, HORA_JORNADA, 0, 0, 0)
 }
-const ahora = () => {
+const cierreDeHoy = () => {
   const d = new Date()
-  d.setSeconds(0, 0)
-  return d
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), HORA_JORNADA, 0, 0, 0)
 }
 
 export function EstadisticaVentas() {
@@ -156,7 +183,7 @@ export function EstadisticaVentas() {
   // esta incompleta y no hay Date valido que guardar. Se interpretan recien
   // al calcular.
   const [desde, setDesde] = useState(() => aTexto(inicioDeMes()))
-  const [hasta, setHasta] = useState(() => aTexto(ahora()))
+  const [hasta, setHasta] = useState(() => aTexto(cierreDeHoy()))
   const [sucursales, setSucursales] = useState<number[]>([1, 2, 3, 4])
   const [dias, setDias] = useState<number[]>([1, 2, 3, 4, 5, 6, 7])
   const [delivery, setDelivery] = useState<string>('')
@@ -221,7 +248,7 @@ export function EstadisticaVentas() {
     set(lista.includes(id) ? lista.filter((x) => x !== id) : [...lista, id].sort())
 
   const limpiar = () => {
-    setDesde(aTexto(inicioDeMes())); setHasta(aTexto(ahora()))
+    setDesde(aTexto(inicioDeMes())); setHasta(aTexto(cierreDeHoy()))
     setSucursales([1, 2, 3, 4])
     setDias([1, 2, 3, 4, 5, 6, 7]); setDelivery(''); setCajero('')
   }
@@ -329,7 +356,9 @@ export function EstadisticaVentas() {
             <p className="mt-2 text-[11px] leading-snug text-gray-400">
               Se escribe a mano. Los numeros de corrido tambien valen:
               <span className="font-mono text-gray-500 dark:text-gray-300"> 250920260200</span>.
-              Para la jornada comercial, de 02:00 a 02:00 del dia siguiente.
+              Si se escribe solo la fecha, la hora queda en
+              <span className="font-mono text-gray-500 dark:text-gray-300"> 02:00</span>,
+              que es el arranque de la jornada comercial.
             </p>
           </Panel>
 

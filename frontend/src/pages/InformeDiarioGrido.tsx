@@ -115,15 +115,22 @@ export function InformeDiarioGrido() {
           {/* Migaja de pan, no un link: quien quiera volver usa el menu, que ya
               muestra donde esta parado. */}
           <p className="text-xs text-muted-foreground mb-1">Ventas</p>
+          {/* Aca iba una leyenda que explicaba que son las mismas metricas del
+              Excel y que la jornada va de 02:00 a 02:00. La saco a pedido de
+              Damian: para quien usa el informe todos los dias es una linea que
+              ya no aporta y le come lugar al titulo.
+
+              La explicacion de la jornada no se pierde del todo: queda como
+              ayuda emergente sobre las fechas, que es donde hace falta y solo
+              para el que la busque. */}
           <h1 className="text-2xl font-semibold tracking-tight">Informe Diario GRIDO</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Las mismas metricas del Excel que sale por mail, para el rango que elijas.
-            La jornada va de 02:00 a 02:00.
-          </p>
         </div>
 
         <div className="flex flex-wrap items-end gap-3 ml-auto">
-          <label className="flex flex-col gap-1">
+          <label
+            className="flex flex-col gap-1"
+            title="Jornada comercial: de las 02:00 de este dia a las 02:00 del siguiente."
+          >
             <span className="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground">Desde</span>
             <input
               type="date" value={desde} max={hasta}
@@ -131,7 +138,10 @@ export function InformeDiarioGrido() {
               className="h-9 rounded-md border bg-background px-2.5 text-sm"
             />
           </label>
-          <label className="flex flex-col gap-1">
+          <label
+            className="flex flex-col gap-1"
+            title="Jornada comercial: de las 02:00 de este dia a las 02:00 del siguiente."
+          >
             <span className="text-[10px] font-semibold tracking-wider uppercase text-muted-foreground">Hasta</span>
             <input
               type="date" value={hasta} min={desde} max={hoy()}
