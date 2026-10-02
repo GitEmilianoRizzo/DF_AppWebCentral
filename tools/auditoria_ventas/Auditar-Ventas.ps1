@@ -48,6 +48,9 @@
                              y sumarlos inventaba restos de miles de pesos.
    C6 PROMOS                 Promos del INFORME = lineas en promocion de la huella
    C7 KILOS                  INFORME = ESTADISTICA = HUELLA
+   C9 VENTA NETA             las columnas Venta neta / Desc. plataformas de
+                             Estadistica = cobrado de la huella / puente C5,
+                             y Venta - Desc - Otros = Neta
    C8 CAJA SILENCIOSA        una caja que vendio en los 14 dias previos y no
                              tiene ninguna venta en la jornada (aviso: suele
                              ser una caja que no sincronizo con el central)
@@ -236,6 +239,15 @@ for ($f = $Desde; $f -le $Hasta; $f = $f.AddDays(1)) {
         # C4 ESTADISTICA = HUELLA
         Comparar $f $s 'C4 ESTADISTICA=HUELLA' 'Venta (Estadistica vs lineas de la huella)' $E_vta $H_lin $TOL_PESOS
         Comparar $f $s 'C4 ESTADISTICA=HUELLA' 'Tickets (Estadistica vs huella)' $E_tk $H_tk 0
+        # C9 VENTA NETA: la columna "Venta neta" de Estadistica tiene que ser
+        # el total cobrado (= Informe Diario = Cierres de Turno) y "Desc.
+        # plataformas" el mismo que reconstruye el puente ticket por ticket.
+        # Solo si el SP desplegado ya trae las columnas (desde 02/10/2026).
+        if ($er -and $er.Table.Columns.Contains('VentaNeta')) {
+            Comparar $f $s 'C9 VENTA NETA' 'Venta neta de Estadistica vs total cobrado de la huella' (D $er.VentaNeta) $H_cab $TOL_PESOS
+            Comparar $f $s 'C9 VENTA NETA' 'Desc. plataformas de Estadistica vs puente ticket por ticket' (D $er.DescPlataformas) $O_pla $TOL_PESOS
+            Comparar $f $s 'C9 VENTA NETA' 'Venta - Desc. plataformas - Otros ajustes vs Venta neta' ($E_vta - (D $er.DescPlataformas) - (D $er.OtrosAjustes)) (D $er.VentaNeta) 0.05
+        }
 
         $I_vta = $null
         if ($SucursalesFueraInforme -notcontains $s) {

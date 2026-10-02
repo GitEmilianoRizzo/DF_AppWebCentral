@@ -47,8 +47,11 @@ Por cada `.sql` de `database/dwh/` que cambio, compara la definicion desplegada 
 ```powershell
 $cn = New-Object System.Data.SqlClient.SqlConnection "Server=WIN-6ARG3SUELOE\SQLEXPRESS;Database=DF_DTW;Integrated Security=True;TrustServerCertificate=True"; $cn.Open()
 $cmd = $cn.CreateCommand(); $cmd.CommandText = "SELECT OBJECT_DEFINITION(OBJECT_ID('dbo.<SP>'))"; $db = [string]$cmd.ExecuteScalar(); $cn.Close()
-((Get-Content 'database\dwh\<archivo>.sql' -Raw) -replace '\s+','').Contains(($db -replace '\s+',''))
+$norm = { param($s) (($s -replace 'CREATE\s+OR\s+ALTER\s+PROCEDURE','CREATE PROCEDURE') -replace '\s+','') }
+(& $norm (Get-Content 'database\dwh\<archivo>.sql' -Raw)).Contains((& $norm $db))
 ```
+- Normalizar `CREATE OR ALTER` es obligatorio: SQL Server guarda esos procedimientos como `CREATE PROCEDURE`. Sin normalizar, todo SP creado asi da "distinto" aunque sea identico. Paso con `usp_EstadisticaVentas` y `usp_CargarAggVentaDia`.
+- Antes de desplegar, compara en un comando y despliega en otro. Si se hace todo junto, el resultado de la comparacion llega cuando ya se piso lo anterior.
 - Si el repo y la base difieren, es un hallazgo: la auditoria del paso 3 mide lo DESPLEGADO, no el archivo.
 - Deci explicitamente cual de los dos auditaste.
 

@@ -63,6 +63,22 @@ public class EstadisticaTotalesDto
 
     [JsonPropertyName("sv_kilos")]
     public decimal SvKilos { get; set; }
+
+    /// <summary>
+    /// Total cobrado: igual a los Cierres de Turno de SmartFran y al Informe
+    /// Diario. Venta - DescPlataformas - OtrosAjustes = VentaNeta. Las tres
+    /// son nulas con filtro de articulo, grupo o tipo de producto.
+    /// </summary>
+    [JsonPropertyName("venta_neta")]
+    public decimal? VentaNeta { get; set; }
+
+    /// <summary>Descuento de PedidosYa / Rappi: las lineas no lo restan, el total cobrado si.</summary>
+    [JsonPropertyName("desc_plataformas")]
+    public decimal? DescPlataformas { get; set; }
+
+    /// <summary>Otras diferencias entre lineas y cobrado (raras: canjes, centavos).</summary>
+    [JsonPropertyName("otros_ajustes")]
+    public decimal? OtrosAjustes { get; set; }
 }
 
 /// <summary>Fila de cualquiera de las grillas por corte.</summary>
@@ -113,6 +129,16 @@ public class EstadisticaFilaDto
 
     [JsonPropertyName("pct_contrib")]
     public decimal? PctContrib { get; set; }
+
+    /// <summary>Solo en el corte por sucursal; nulo en los demas. Ver EstadisticaTotalesDto.</summary>
+    [JsonPropertyName("venta_neta")]
+    public decimal? VentaNeta { get; set; }
+
+    [JsonPropertyName("desc_plataformas")]
+    public decimal? DescPlataformas { get; set; }
+
+    [JsonPropertyName("otros_ajustes")]
+    public decimal? OtrosAjustes { get; set; }
 }
 
 /// <summary>Un dia de la serie historica.</summary>

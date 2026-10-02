@@ -117,7 +117,11 @@ BEGIN
         COSTO         numeric(18,4),
         UTILIDAD      numeric(18,4),
         CONTRIB       numeric(18,4),
-        TEMPERATURA   numeric(6,2)
+        TEMPERATURA   numeric(6,2),
+        -- Para Venta neta / Desc. plataformas: total cobrado del ticket y
+        -- descuento declarado por la plataforma (vienen repetidos por linea).
+        VTAIMPORTE    numeric(16,4),
+        PEDIDO_DESC   numeric(16,4)
     );
 
     INSERT #U
@@ -165,7 +169,8 @@ BEGIN
         h.LINEA_ES_SOBREVENTA,
         h.IMPORTE, h.CANTIDAD, h.DESCUENTOS, h.KILOS,
         h.COSTO, h.UTILIDAD, h.CONTRIB_MARGINAL,
-        cl.TEMPERATURA
+        cl.TEMPERATURA,
+        h.VTAIMPORTE, h.PEDIDO_DESCUENTO
     FROM dbo.TRX_HUELLA_VENTA h
     /* El clima se trae aca y no en cada corte: es una tabla chica (87 mil
        filas, las 4 sucursales hora por hora desde 2024) y asi se busca una
@@ -201,6 +206,50 @@ BEGIN
         (SELECT ISNULL(SUM(CASE WHEN ES_ANULADA = 0 THEN IMPORTE ELSE 0 END), 0) FROM #U);
 
     /* =======================================================================
+       Venta neta y descuento de plataformas (pedido de 02/10/2026).
+
+       Esta pantalla suma LINEAS a precio de lista, como Estadisticas de
+       SmartFran. El Informe Diario y los Cierres de Turno de SmartFran suman
+       el TOTAL COBRADO de cada ticket. Casi siempre dan igual; cuando no, la
+       causa es el descuento de PedidosYa / Rappi: las lineas no lo restan y
+       el total cobrado si. Escalada 26/09: 2.950.330 contra 2.894.550, siete
+       pedidos de plataforma, 55.780 de diferencia.
+
+       Por ticket:
+         VENTA_NETA        = total cobrado (VTAIMPORTE)
+         DESC_PLATAFORMAS  = lineas - cobrado, cuando esa diferencia es
+                             exactamente el descuento declarado del pedido
+         OTROS_AJUSTES     = cualquier otra diferencia lineas - cobrado.
+                             Rara: 9 tickets en todo septiembre 2026 (sobre
+                             todo canjes "CL" cobrados a la mitad). Va aparte
+                             para que Desc. plataformas sea solo eso y la
+                             cuenta cierre: Venta - Desc - Otros = Neta.
+       NO alcanza con sumar PEDIDO_DESCUENTO: 153 pedidos de septiembre lo
+       traen pero sus lineas ya lo reflejan.
+
+       Con filtro por articulo, grupo o tipo de producto las tres van en NULL:
+       el total cobrado es del ticket entero y no se puede repartir por linea.
+       ======================================================================= */
+    DECLARE @hayFiltroProducto bit =
+        CASE WHEN @TipoProducto IS NOT NULL OR @GrupoProducto IS NOT NULL OR @Articulo IS NOT NULL
+             THEN 1 ELSE 0 END;
+
+    SELECT t.SUCURSAL,
+           VENTA_NETA       = SUM(t.cobrado),
+           DESC_PLATAFORMAS = SUM(CASE WHEN t.es_plataforma = 1 THEN t.dif ELSE 0 END),
+           OTROS_AJUSTES    = SUM(CASE WHEN t.es_plataforma = 0 THEN t.dif ELSE 0 END)
+    INTO #NETA
+    FROM (SELECT SUCURSAL, cobrado, dif = lineas - cobrado,
+                 es_plataforma = CASE WHEN ISNULL(pdesc, 0) <> 0
+                                       AND ABS((lineas - cobrado) - pdesc) < 0.05 THEN 1 ELSE 0 END
+          FROM (SELECT SUCURSAL, TICKET_KEY, lineas = SUM(IMPORTE),
+                       cobrado = MAX(VTAIMPORTE), pdesc = MAX(PEDIDO_DESC)
+                FROM #U WHERE ES_ANULADA = 0
+                GROUP BY SUCURSAL, TICKET_KEY) k) t
+    WHERE @hayFiltroProducto = 0
+    GROUP BY t.SUCURSAL;
+
+    /* =======================================================================
        1) Totales: el panel azul de la derecha en la pantalla de SmartFran.
 
        Los tickets EXCLUYEN los anulados, que es como los cuenta SmartFran.
@@ -228,7 +277,11 @@ BEGIN
            del ticket y viene repetido en todas sus lineas, asi que usarlo
            aca sumaria el ticket entero: da 4.866.500 en vez de 1.376.800. */
         SvImporte      = ISNULL(SUM(CASE WHEN ES_ANULADA = 0 AND ES_SOBREVENTA = 1 THEN IMPORTE ELSE 0 END), 0),
-        SvKilos        = ISNULL(SUM(CASE WHEN ES_ANULADA = 0 AND ES_SOBREVENTA = 1 THEN KILOS ELSE 0 END), 0)
+        SvKilos        = ISNULL(SUM(CASE WHEN ES_ANULADA = 0 AND ES_SOBREVENTA = 1 THEN KILOS ELSE 0 END), 0),
+        -- NULL con filtro de producto (ver #NETA)
+        VentaNeta       = (SELECT SUM(VENTA_NETA)       FROM #NETA WHERE @hayFiltroProducto = 0),
+        DescPlataformas = (SELECT SUM(DESC_PLATAFORMAS) FROM #NETA WHERE @hayFiltroProducto = 0),
+        OtrosAjustes    = (SELECT SUM(OTROS_AJUSTES)    FROM #NETA WHERE @hayFiltroProducto = 0)
     FROM #U;
 
     /* =======================================================================
@@ -236,7 +289,7 @@ BEGIN
        ======================================================================= */
     SELECT
         Detalle    = SUC_DESCRIP,
-        Sucursal   = SUCURSAL,
+        Sucursal   = #U.SUCURSAL,
         Venta      = ISNULL(SUM(CASE WHEN ES_ANULADA = 0 THEN IMPORTE ELSE 0 END), 0),
         Porcentaje = CAST(100.0 * ISNULL(SUM(CASE WHEN ES_ANULADA = 0 THEN IMPORTE ELSE 0 END), 0)
                           / NULLIF(@ventaTotal, 0) AS numeric(18,4)),
@@ -251,9 +304,13 @@ BEGIN
                           / NULLIF(SUM(CASE WHEN ES_ANULADA = 0 THEN IMPORTE ELSE 0 END), 0) AS numeric(18,4)),
         ContribMarginal = ISNULL(SUM(CASE WHEN ES_ANULADA = 0 THEN CONTRIB ELSE 0 END), 0),
         PctContrib = CAST(100.0 * ISNULL(SUM(CASE WHEN ES_ANULADA = 0 THEN CONTRIB ELSE 0 END), 0)
-                          / NULLIF(SUM(CASE WHEN ES_ANULADA = 0 THEN IMPORTE ELSE 0 END), 0) AS numeric(18,4))
+                          / NULLIF(SUM(CASE WHEN ES_ANULADA = 0 THEN IMPORTE ELSE 0 END), 0) AS numeric(18,4)),
+        VentaNeta       = MAX(n.VENTA_NETA),
+        DescPlataformas = MAX(n.DESC_PLATAFORMAS),
+        OtrosAjustes    = MAX(n.OTROS_AJUSTES)
     FROM #U
-    GROUP BY SUCURSAL, SUC_DESCRIP
+    LEFT JOIN #NETA n ON n.SUCURSAL = #U.SUCURSAL
+    GROUP BY #U.SUCURSAL, SUC_DESCRIP
     ORDER BY SUC_DESCRIP;
 
     /* 3) Por grupo de producto */

@@ -470,7 +470,7 @@ export function EstadisticaVentas() {
                       datos={dist.entrega.map((d) => ({ name: d.clave, value: d.venta }))}
                       detalle={dist.entrega as unknown as Record<string, unknown>[]} />
                   </div>
-                  <Grilla filas={datos.por_sucursal} conPedidos />
+                  <Grilla filas={datos.por_sucursal} conPedidos conNeta />
                 </>
               )}
 
@@ -565,6 +565,19 @@ export function EstadisticaVentas() {
           <div className="rounded-xl bg-gradient-to-br from-[#1f3a4d] to-[#122430] p-4 text-white shadow-lg">
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-white/60">Totales</h3>
             <Dato rotulo="Total Ventas" valor={money(t?.venta_total ?? 0)} destacado />
+            {/* Venta a precio de lista (= Estadisticas de SmartFran) y lo
+                realmente cobrado (= Cierres de Turno de SmartFran y el Informe
+                Diario). La diferencia son los descuentos de las plataformas.
+                Con filtro de producto no aplica: el cobrado es del ticket. */}
+            {t?.venta_neta != null && (
+              <>
+                <Dato rotulo="Total Desc. Plataformas" valor={money(t.desc_plataformas ?? 0)} />
+                {Math.abs(t.otros_ajustes ?? 0) >= 1 && (
+                  <Dato rotulo="Otros ajustes" valor={money(t.otros_ajustes ?? 0)} />
+                )}
+                <Dato rotulo="Total Venta Neta" valor={money(t.venta_neta)} destacado />
+              </>
+            )}
             <Dato rotulo="Tiquet Promedio" valor={money(t?.ticket_promedio ?? 0)} />
             <Dato rotulo="Total Tiquets" valor={num(t?.tickets ?? 0)} />
             <Dato rotulo="Total Can. Articulos" valor={num(t?.cantidad ?? 0)} />
@@ -936,13 +949,27 @@ function ConColor({ texto }: { texto: string }) {
 }
 
 /** Grilla completa: la que se cruza contra SmartFran columna por columna. */
-function Grilla({ filas, conPedidos }: { filas: EstadisticaFila[]; conPedidos?: boolean }) {
+function Grilla({ filas, conPedidos, conNeta }: { filas: EstadisticaFila[]; conPedidos?: boolean; conNeta?: boolean }) {
   const cols: Col<EstadisticaFila>[] = [
     { rotulo: 'Detalle', orden: (f) => f.detalle, texto: true, valor: (f) => f.detalle, titulo: true, total: () => 'TOTAL' },
     { rotulo: 'Venta', orden: (f) => f.venta, valor: (f) => money(f.venta), principal: true,
       total: (fs) => money(sumar(fs, (f) => f.venta)) },
     { rotulo: '%', orden: (f) => f.porcentaje ?? 0, valor: (f) => pct(f.porcentaje), tenue: true,
       total: (fs) => pct(sumar(fs, (f) => f.porcentaje)) },
+    // Solo en el corte por sucursal: Venta (lista, = Estadisticas de SmartFran)
+    // menos Desc. plataformas da Venta neta (cobrado, = Cierres de Turno).
+    ...(conNeta && filas.some((f) => f.venta_neta != null) ? [
+      { rotulo: 'Desc. plataformas', orden: (f: EstadisticaFila) => f.desc_plataformas ?? 0,
+        valor: (f: EstadisticaFila) => money(f.desc_plataformas),
+        total: (fs: EstadisticaFila[]) => money(sumar(fs, (f) => f.desc_plataformas)) },
+      ...(filas.some((f) => Math.abs(f.otros_ajustes ?? 0) >= 1) ? [
+        { rotulo: 'Otros ajustes', orden: (f: EstadisticaFila) => f.otros_ajustes ?? 0,
+          valor: (f: EstadisticaFila) => money(f.otros_ajustes), tenue: true,
+          total: (fs: EstadisticaFila[]) => money(sumar(fs, (f) => f.otros_ajustes)) }] : []),
+      { rotulo: 'Venta neta', orden: (f: EstadisticaFila) => f.venta_neta ?? 0,
+        valor: (f: EstadisticaFila) => money(f.venta_neta), principal: true,
+        total: (fs: EstadisticaFila[]) => money(sumar(fs, (f) => f.venta_neta)) },
+    ] : []),
     ...(conPedidos ? [{ rotulo: 'Pedidos', orden: (f: EstadisticaFila) => f.pedidos ?? 0, valor: (f: EstadisticaFila) => num(f.pedidos),
       total: (fs: EstadisticaFila[]) => num(sumar(fs, (f) => f.pedidos)) }] : []),
     { rotulo: 'Cantidad', orden: (f) => f.cantidad, valor: (f) => num(f.cantidad),

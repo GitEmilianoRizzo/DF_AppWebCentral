@@ -644,6 +644,16 @@ export interface EstadisticaTotales {
   sv_aceptadas: number
   sv_importe: number
   sv_kilos: number
+  /**
+   * Total cobrado (= Cierres de Turno de SmartFran e Informe Diario).
+   * venta_total - desc_plataformas - otros_ajustes = venta_neta.
+   * Las tres llegan null con filtro de articulo, grupo o tipo de producto.
+   */
+  venta_neta: number | null
+  /** Descuento de PedidosYa / Rappi: las lineas no lo restan, el cobrado si. */
+  desc_plataformas: number | null
+  /** Otras diferencias lineas / cobrado (canjes, centavos). Casi siempre ~0. */
+  otros_ajustes: number | null
 }
 
 export interface EstadisticaFila {
@@ -662,6 +672,10 @@ export interface EstadisticaFila {
   pct_utilidad: number | null
   contrib_marginal: number | null
   pct_contrib: number | null
+  /** Solo en el corte por sucursal; null en los demas. Ver EstadisticaTotales. */
+  venta_neta: number | null
+  desc_plataformas: number | null
+  otros_ajustes: number | null
 }
 
 export interface EstadisticaDia {
