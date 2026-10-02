@@ -67,6 +67,28 @@ function acumular(t: Totales, f: Fila): Totales {
 
 const div = (a: number, b: number) => (b === 0 ? null : a / b)
 
+const grados = (n: number | null) => (n === null ? '' : num(n, 1) + '°')
+const mm = (n: number | null) => (n === null ? '' : num(n, 1))
+
+/**
+ * Clima de una sucursal para su subtotal. No se arma con los turnos: dos
+ * cajas trabajando a la vez sumarian dos veces la misma lluvia. Sale de los
+ * valores de la jornada entera que manda el SP (suc_*), uno por dia: con un
+ * solo dia es ese valor; con un rango, la lluvia se suma y la sensacion se
+ * promedia entre dias.
+ */
+function climaSucursal(filas: Fila[]) {
+  const porDia = new Map<string, Fila>()
+  for (const f of filas) if (!porDia.has(f.fecha_operativa)) porDia.set(f.fecha_operativa, f)
+  const dias = [...porDia.values()]
+  const sens = dias.map((d) => d.suc_sensacion_termica).filter((v): v is number => v !== null)
+  const lluvia = dias.map((d) => d.suc_lluvia_mm).filter((v): v is number => v !== null)
+  return {
+    sens: sens.length ? sens.reduce((a, b) => a + b, 0) / sens.length : null,
+    lluvia: lluvia.length ? lluvia.reduce((a, b) => a + b, 0) : null,
+  }
+}
+
 export function InformeDiarioGrido() {
   const [desde, setDesde] = useState(ayer())
   const [hasta, setHasta] = useState(ayer())
@@ -106,7 +128,19 @@ export function InformeDiarioGrido() {
 
   const total = useMemo(() => filas.reduce(acumular, cero()), [filas])
 
-  const COLS = 19
+  // "Cajas Delivery  Escalada: 2  Fiorito: 1  Lanus Oeste: 2", armado con lo
+  // que marca CFG_CAJA_DELIVERY y no con un texto fijo.
+  const cajasDelivery = useMemo(
+    () => grupos
+      .map((g) => ({
+        rotulo: g.rotulo,
+        cajas: [...new Set(g.filas.filter((f) => f.es_caja_delivery).map((f) => f.caja))].sort((a, b) => a - b),
+      }))
+      .filter((g) => g.cajas.length > 0),
+    [grupos],
+  )
+
+  const COLS = 22
 
   return (
     <div className="space-y-5">
@@ -181,6 +215,14 @@ export function InformeDiarioGrido() {
           ALERTA
         </span>
         <span>%SV por debajo del estandar ({pct(UMBRAL_SV)})</span>
+        {cajasDelivery.length > 0 && (
+          <span className="ml-4 inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="rounded px-2 py-1 bg-[#6C3483] text-white font-medium">Cajas Delivery</span>
+            {cajasDelivery.map((c) => (
+              <span key={c.rotulo}>{c.rotulo}: <strong className="text-foreground">{c.cajas.join(', ')}</strong></span>
+            ))}
+          </span>
+        )}
       </div>
 
       {error && (
@@ -217,8 +259,11 @@ export function InformeDiarioGrido() {
               <Th>Promos ($)</Th><Th>%Promos</Th>
               <Th className="bg-[#1F618D]">Nuevos Socios</Th>
               <Th className="bg-[#1F618D]">Ventas Club Grido</Th>
+              <Th className="bg-[#1F618D]">Kilos Club</Th>
               <Th className="bg-[#1F618D]">%VCG /Kilos</Th>
               <Th>Anuladas</Th><Th>Dif. de Caja</Th>
+              <Th className="bg-[#117A65]">Sens. Térmica Prom.</Th>
+              <Th className="bg-[#117A65]">Lluvia (mm)</Th>
             </tr>
           </thead>
 
@@ -237,6 +282,7 @@ export function InformeDiarioGrido() {
 
             {!cargando && grupos.map((g) => {
               const sub = g.filas.reduce(acumular, cero())
+              const climaSub = climaSucursal(g.filas)
               const color = COLOR_SUCURSAL[g.rotulo] ?? { barra: 'bg-slate-600', fila: 'bg-muted/40' }
               return (
                 // La key va en el Fragment, que es el elemento que devuelve el
@@ -260,9 +306,12 @@ export function InformeDiarioGrido() {
                     <Td>{pct(div(sub.promos, sub.ventas))}</Td>
                     <Td>{num(sub.socios)}</Td>
                     <Td>{money(sub.club)}</Td>
+                    <Td>{num(sub.kilosClub, 1)}</Td>
                     <Td>{pct(div(sub.kilosClub, sub.kilos))}</Td>
                     <Td>{num(sub.anuladas)}</Td>
                     <Td>{money(sub.dif)}</Td>
+                    <Td>{grados(climaSub.sens)}</Td>
+                    <Td>{mm(climaSub.lluvia)}</Td>
                   </tr>
 
                   {/* cajeros */}
@@ -277,7 +326,17 @@ export function InformeDiarioGrido() {
                         {variosDias && <Td className="tabular-nums">{f.fecha_operativa.slice(0, 10)}</Td>}
                         <Td className="text-left pl-6">{f.cajero}</Td>
                         <Td>{f.turno}</Td>
-                        <Td>{f.caja}</Td>
+                        <Td>
+                          {f.caja}
+                          {f.es_caja_delivery && (
+                            <span
+                              title="Caja de delivery"
+                              className="ml-1 rounded px-1 py-px text-[9px] font-semibold bg-[#6C3483] text-white"
+                            >
+                              DEL
+                            </span>
+                          )}
+                        </Td>
                         <Td>{f.horario}</Td>
                         <Td>{num(f.horas, 1)}</Td>
                         <Td>{num(f.kilos, 1)}</Td>
@@ -291,9 +350,12 @@ export function InformeDiarioGrido() {
                         <Td>{pct(div(f.promos, f.ventas))}</Td>
                         <Td>{num(f.socios)}</Td>
                         <Td>{money(f.ventas_club)}</Td>
+                        <Td>{num(f.kilos_club, 1)}</Td>
                         <Td>{pct(div(f.kilos_club, f.kilos))}</Td>
                         <Td>{num(f.anuladas)}</Td>
                         <Td>{money(f.dif_caja)}</Td>
+                        <Td>{grados(f.sensacion_termica)}</Td>
+                        <Td>{mm(f.lluvia_mm)}</Td>
                       </tr>
                     )
                   })}
@@ -320,9 +382,12 @@ export function InformeDiarioGrido() {
                 <Td>{pct(div(total.promos, total.ventas))}</Td>
                 <Td>{num(total.socios)}</Td>
                 <Td>{money(total.club)}</Td>
+                <Td>{num(total.kilosClub, 1)}</Td>
                 <Td>{pct(div(total.kilosClub, total.kilos))}</Td>
                 <Td>{num(total.anuladas)}</Td>
                 <Td>{money(total.dif)}</Td>
+                {/* El clima es de cada sucursal: un total entre zonas no dice nada. */}
+                <Td /><Td />
               </tr>
             </tfoot>
           )}
@@ -333,7 +398,10 @@ export function InformeDiarioGrido() {
         <strong className="font-medium">Promos</strong> es la venta de los articulos vendidos en una
         promocion, a precio de lista; no incluye sobreventas ni canjes de puntos.{' '}
         <strong className="font-medium">%VCG</strong> son los kilos vendidos a socios Club Grido sobre
-        el total de kilos. <strong className="font-medium">Nuevos socios</strong> se
+        el total de kilos. <strong className="font-medium">Clima</strong>: sensacion termica promedio y
+        lluvia en las horas en que el turno tuvo ventas; en el subtotal, las de la sucursal en toda la
+        jornada. <strong className="font-medium">DEL</strong> marca la caja de delivery.{' '}
+        <strong className="font-medium">Nuevos socios</strong> se
         imputa al primer turno de cada cajero en la jornada: las altas de tarjeta no guardan en que
         turno se hicieron, asi que repartirlas entre todos duplicaria el total.
       </p>

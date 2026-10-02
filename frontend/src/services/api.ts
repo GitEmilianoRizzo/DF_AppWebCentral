@@ -598,6 +598,14 @@ export interface InformeGridoFila {
   kilos_club: number
   anuladas: number
   dif_caja: number
+  /** La caja atiende delivery (tabla CFG_CAJA_DELIVERY). */
+  es_caja_delivery: boolean
+  /** Clima en las horas del turno; null si no hay clima cargado. */
+  sensacion_termica: number | null
+  lluvia_mm: number | null
+  /** Clima de la sucursal en toda la jornada: es lo que va en el subtotal. */
+  suc_sensacion_termica: number | null
+  suc_lluvia_mm: number | null
 }
 
 export const informeGridoApi = {

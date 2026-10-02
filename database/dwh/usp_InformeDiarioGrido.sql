@@ -32,6 +32,18 @@
    - KILOS_CLUB acompaña a VENTAS_CLUB: el %VCG se mide sobre kilos, no
      sobre pesos (pedido de Damian del 01/10/2026). 100 kg vendidos y 40 a
      socios = 40%.
+   - EsCajaDelivery sale de CFG_CAJA_DELIVERY (pedido de Damian del
+     02/10/2026): la leyenda "Cajas Delivery" y la marca en la columna Caja
+     se arman con eso, no con un texto fijo.
+   - CLIMA (pedido de Damian del 02/10/2026, reemplaza las columnas
+     reservadas Personal / Productividad / Clima del Excel):
+       SensacionTermica = promedio de SENSACION_TERMICA de CLIMA_ZONA_HORA
+       LluviaMm         = suma de PRECIPITACION
+     sobre las horas en que el turno tuvo ventas (de la hora de la primera a
+     la de la ultima, inclusive). Las columnas Suc* son lo mismo pero para la
+     sucursal en toda la jornada, y son las que van en el subtotal: sumar la
+     lluvia de los turnos la contaria dos veces cuando las dos cajas trabajan
+     a la vez.
 
    Creado: 2026-09-16
    =========================================================================== */
@@ -165,6 +177,12 @@ BEGIN
                rn = ROW_NUMBER() OVER (PARTITION BY FECHA_OPERATIVA, SUCURSAL, CAJERO
                                        ORDER BY ISNULL(PRIMERA, '9999-12-31'), TURNO)
         FROM BASE
+    ),
+    -- La ventana de la sucursal en la jornada, para el clima del subtotal.
+    SUCDIA AS (
+        SELECT FECHA_OPERATIVA, SUCURSAL, PRIMERA = MIN(PRIMERA), ULTIMA = MAX(ULTIMA)
+        FROM BASE
+        GROUP BY FECHA_OPERATIVA, SUCURSAL
     )
     /* Los alias van en PascalCase y NO en MAYUSCULA_CON_GUIONES a proposito.
        Dapper mapea columna a propiedad por nombre y no ignora los guiones
@@ -199,7 +217,12 @@ BEGIN
         VentasClub = b.VENTAS_CLUB,
         KilosClub  = CAST(ROUND(b.KILOS_CLUB, 1) AS numeric(12,1)),
         Anuladas   = b.ANULADAS,
-        DifCaja    = ISNULL(t.TURDIFERENCIA, 0)
+        DifCaja    = ISNULL(t.TURDIFERENCIA, 0),
+        EsCajaDelivery = CAST(CASE WHEN cd.CAJA IS NULL THEN 0 ELSE 1 END AS bit),
+        SensacionTermica    = CAST(ct.SENS AS numeric(5,1)),
+        LluviaMm            = CAST(ct.LLUVIA AS numeric(7,1)),
+        SucSensacionTermica = CAST(cs.SENS AS numeric(5,1)),
+        SucLluviaMm         = CAST(cs.LLUVIA AS numeric(7,1))
     FROM BASE b
     JOIN PRIMERO p
       ON  p.FECHA_OPERATIVA = b.FECHA_OPERATIVA AND p.SUCURSAL = b.SUCURSAL
@@ -214,6 +237,27 @@ BEGIN
         WHERE h2.BASE_ORIGEN = @BaseOrigen AND h2.FECHA_OPERATIVA = b.FECHA_OPERATIVA
           AND h2.SUCURSAL = b.SUCURSAL AND h2.TURNO = b.TURNO AND h2.CAJA = b.CAJA
     ) t
+    LEFT JOIN dbo.CFG_CAJA_DELIVERY cd
+      ON  cd.BASE_ORIGEN = @BaseOrigen AND cd.SUCURSAL = b.SUCURSAL AND cd.CAJA = b.CAJA
+    -- Clima del turno: horas enteras desde la de la primera venta hasta la de
+    -- la ultima. CLIMA_KEY_HORA esta en hora local, igual que FECHA_HORA.
+    OUTER APPLY (
+        SELECT SENS = AVG(c.SENSACION_TERMICA), LLUVIA = SUM(c.PRECIPITACION)
+        FROM dbo.CLIMA_ZONA_HORA c
+        WHERE c.BASE_ORIGEN = @BaseOrigen AND c.SUCURSAL = b.SUCURSAL
+          AND c.CLIMA_KEY_HORA >= DATEADD(hour, DATEDIFF(hour, 0, b.PRIMERA), 0)
+          AND c.CLIMA_KEY_HORA <= DATEADD(hour, DATEDIFF(hour, 0, b.ULTIMA), 0)
+    ) ct
+    -- Clima de la sucursal en la jornada, para el subtotal.
+    JOIN SUCDIA sd
+      ON  sd.FECHA_OPERATIVA = b.FECHA_OPERATIVA AND sd.SUCURSAL = b.SUCURSAL
+    OUTER APPLY (
+        SELECT SENS = AVG(c.SENSACION_TERMICA), LLUVIA = SUM(c.PRECIPITACION)
+        FROM dbo.CLIMA_ZONA_HORA c
+        WHERE c.BASE_ORIGEN = @BaseOrigen AND c.SUCURSAL = sd.SUCURSAL
+          AND c.CLIMA_KEY_HORA >= DATEADD(hour, DATEDIFF(hour, 0, sd.PRIMERA), 0)
+          AND c.CLIMA_KEY_HORA <= DATEADD(hour, DATEDIFF(hour, 0, sd.ULTIMA), 0)
+    ) cs
     ORDER BY b.FECHA_OPERATIVA,
              CASE b.SUCURSAL WHEN 3 THEN 1 WHEN 2 THEN 2 WHEN 1 THEN 3 ELSE 9 END,
              b.TURNO, b.CAJA;

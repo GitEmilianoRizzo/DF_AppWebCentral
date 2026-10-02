@@ -72,4 +72,24 @@ public class InformeGridoFilaDto
 
     [JsonPropertyName("dif_caja")]
     public decimal DifCaja { get; set; }
+
+    /// <summary>La caja atiende delivery segun CFG_CAJA_DELIVERY.</summary>
+    [JsonPropertyName("es_caja_delivery")]
+    public bool EsCajaDelivery { get; set; }
+
+    /// <summary>Sensacion termica promedio (°C) en las horas del turno. Null si no hay clima cargado.</summary>
+    [JsonPropertyName("sensacion_termica")]
+    public decimal? SensacionTermica { get; set; }
+
+    /// <summary>Lluvia (mm) en las horas del turno.</summary>
+    [JsonPropertyName("lluvia_mm")]
+    public decimal? LluviaMm { get; set; }
+
+    /// <summary>Sensacion termica de la sucursal en toda la jornada: va en el subtotal.</summary>
+    [JsonPropertyName("suc_sensacion_termica")]
+    public decimal? SucSensacionTermica { get; set; }
+
+    /// <summary>Lluvia de la sucursal en toda la jornada: va en el subtotal.</summary>
+    [JsonPropertyName("suc_lluvia_mm")]
+    public decimal? SucLluviaMm { get; set; }
 }
