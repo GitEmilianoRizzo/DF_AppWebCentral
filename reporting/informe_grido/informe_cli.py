@@ -151,6 +151,12 @@ def generar_informe(cfg, fecha_informe, hora_corte):
         log.info("Turnos: %d filas", len(df_turnos))
         df_tarjetas = ig.get_tarjetas(conn, fecha_inicio, fecha_fin)
         log.info("Tarjetas: %d filas", len(df_tarjetas))
+        # Clima y cajas de delivery vienen del DWH (DF_DTW). Si no estan, el
+        # informe sale igual con esas columnas vacias.
+        df_clima = ig.get_clima(conn, fecha_inicio, fecha_fin)
+        log.info("Clima: %d horas", len(df_clima))
+        df_cajas = ig.get_cajas_delivery(conn)
+        log.info("Cajas delivery: %d", len(df_cajas))
     finally:
         try:
             conn.close()
@@ -164,7 +170,9 @@ def generar_informe(cfg, fecha_informe, hora_corte):
     kilos = ig.procesar_kilos(df_kilos, suc_map)
     extra = ig.procesar_turnos_extra(df_turnos, suc_map)
     socios = ig.procesar_socios(df_tarjetas, suc_map)
-    datos = ig.ensamblar(turnos, kilos, socios, extra)
+    clima = ig.procesar_clima(df_clima, suc_map)
+    cajas = ig.procesar_cajas_delivery(df_cajas, suc_map)
+    datos = ig.ensamblar(turnos, kilos, socios, extra, clima, cajas)
 
     resumen = armar_resumen(datos, fecha_inicio, fecha_fin)
     return datos, resumen

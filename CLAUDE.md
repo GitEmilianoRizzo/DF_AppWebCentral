@@ -19,6 +19,26 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools\auditoria_ventas\Audit
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\auditoria_ventas\Auditar-Ventas.ps1 -Dias 30
 ```
 
+## Ramas
+
+- `main`: lo que esta publicado en produccion.
+- `dev/...`: cambios en desarrollo, esperando definicion o publicacion.
+
+Desarrollo corre desde este mismo directorio: la API en 7200 (Debug) y el front de Vite en 3000.
+
+La base DF_DTW es UNA SOLA para desarrollo y produccion. Un SP desplegado lo ven los dos al instante. Por eso, mientras un cambio no se publique, solo se pueden desplegar cambios compatibles: agregar columnas o tablas, nunca cambiar el valor de una que ya existe.
+
+## Excel de las 13:00 (Informe Diario GRIDO)
+
+La fuente versionada esta en `reporting/informe_grido/`. La tarea programada "GRIDO - Informe Diario" corre desde `C:\PILL-DF\APPs\01.01_app_ReportingVentasBase`, que no esta en git.
+
+- El `config.ini` de la copia del repo solo manda a Emiliano y no copia a Drive. Nunca va a git, porque tiene la contrasena de Gmail.
+- Para probar: `informe_cli.py --fecha AAAA-MM-DD --sin-mail --sin-drive`.
+- Para publicar:
+  1. Hacer backup de `informe_grido.py` e `informe_cli.py` de produccion.
+  2. Copiar los dos archivos del repo encima.
+  3. Correr `TAREA_INFORME_DIARIO.bat <fecha> --sin-mail` en produccion para verificar.
+
 ## Publicar en produccion (puerto 7100)
 
 Produccion corre como la tarea programada "DF WebApp - Deploy 7100", en S4U y sesion 0. Una consola sin elevacion no puede matar ese proceso, y la DLL queda bloqueada mientras corre.

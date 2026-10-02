@@ -76,6 +76,17 @@ Controles del script: C1 origen=huella, C2 huella=agregado, C3 informe=huella, C
 
 Si cualquiera se mueve, es RECHAZADO, salvo que el cambio sea justamente redefinir esa metrica y lo diga. En ese caso informa el valor nuevo para actualizar esta tabla.
 
+### 3b. Excel contra web (obligatorio si cambio el informe o el Excel)
+El Excel de las 13:00 lee SmartFran directo y la web lee la huella: son dos caminos distintos para los mismos numeros. Compara los dos celda por celda, con el Python del entorno del Excel:
+```powershell
+& "C:\PILL-DF\APPs\01.01_app_ReportingVentasBase\.venv\Scripts\python.exe" "C:\PILL-DF\APPs\00.00_WebApp_Central\tools\auditoria_ventas\comparar_excel_web.py" 2026-09-26 2026-09-27 <ayer>
+```
+- Usa la copia de desarrollo (`reporting/informe_grido`), con `--sin-mail --sin-drive`: no manda nada a nadie.
+- Compara ventas, kilos, tickets, promos, ventas y kilos club, caja delivery y clima.
+- El 27/09 tuvo lluvia y el 26/09 no: entre los dos cubren ambos casos.
+- Cualquier diferencia es FALLA.
+- Para comparar contra el Excel que esta en PRODUCCION, agrega `--carpeta C:\PILL-DF\APPs\01.01_app_ReportingVentasBase`.
+
 ### 4. Revision de codigo de lo que cambio
 Mira el diff buscando estos errores, que son los que ya pasaron o casi pasan:
 - Sumar `VTAIMPORTE` por linea en vez de `MAX` por ticket. Duplica la venta.
@@ -90,7 +101,11 @@ Mira el diff buscando estos errores, que son los que ya pasaron o casi pasan:
   - Pantalla.
   - Si falta un eslabon, el front muestra `NaN` o 0 sin error.
 - Cambios en la carga que puedan borrar sin reinsertar. El DELETE e INSERT tiene que seguir en una transaccion.
-- El Excel de las 13:00 (`C:\PILL-DF\APPs\01.01_app_ReportingVentasBase\informe_grido.py`) calcula las mismas columnas por su cuenta. Si cambio una definicion en la web y no ahi, avisa que van a mostrar numeros distintos.
+- El Excel de las 13:00 calcula las mismas columnas por su cuenta.
+  - La fuente versionada es `reporting/informe_grido/`. Produccion corre desde `C:\PILL-DF\APPs\01.01_app_ReportingVentasBase`, fuera de git.
+  - Si cambio una definicion en la web y no en el Excel (o al reves), es FALLA.
+  - Si la copia del repo y la de produccion difieren, avisalo: hay cambios esperando publicacion.
+- Redondeos en Python con `round()`: redondea al par y SQL hacia arriba. En el Excel se usa `redondear1()`.
 
 ### 5. Veredicto
 Respondé con este formato y nada de relleno:

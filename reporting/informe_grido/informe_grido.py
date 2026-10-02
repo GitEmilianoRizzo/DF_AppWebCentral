@@ -12,6 +12,7 @@ import pandas as pd
 import pyodbc
 from datetime import datetime, timedelta
 from collections import defaultdict
+from decimal import Decimal, ROUND_HALF_UP
 import io
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
@@ -34,6 +35,12 @@ st.set_page_config(
 ORDEN_SUC = ["Fiorito", "Escalada", "Lanus"]
 SUC_DISPLAY = {"Fiorito": "Fiorito", "Escalada": "Escalada", "Lanus": "Lanus Oeste"}
 SUC_ID_MAP = {3: "Fiorito", 2: "Escalada", 1: "Lanus"}  # Mapeo ID -> nombre
+
+# El clima y las cajas de delivery no estan en la base de SmartFran: viven en
+# el DWH de la WebApp Central, en el mismo servidor. Se leen de ahi para que el
+# Excel y la pantalla web usen exactamente los mismos datos.
+BASE_DWH = "DF_DTW"
+BASE_ORIGEN = "SRV_GRIDO_ZSUR"
 
 # ----------------------------------------------------------------------------
 # Estandares para las alertas por desvio
@@ -213,6 +220,16 @@ def get_detventas_kilos(conn, fecha_inicio, fecha_fin, sucursales_excluir=[4]):
     - Para otros tipos: kilos = cant * artpeso
     - Se usa ARTICULOSHISTORICO (version historica via artversion) NO articulos.artpeso
     - Filtro: promo <> 2 y vtaestado = 'NORMAL'
+
+    Ademas trae, con los mismos filtros:
+    - KILOS_CLUB: los kilos de las ventas Club Grido (vtaoperacion = 'VL'). Es
+      la base del %VCG, que desde el 02/10/2026 se mide sobre kilos y no sobre
+      pesos (pedido de Damian).
+    - PROMOS: la venta (cant * precio) de las lineas que forman parte de una
+      PROMOCION, es decir cuya PROMOCION apunta a un articulo de tipo
+      PROMOCION. Es el mismo criterio que LINEA_ES_PROMOCION de la huella, asi
+      que el Excel y la pantalla web dan igual. No incluye sobreventas ni
+      canjes, que tambien se cargan como "promocion" en SmartFran.
     """
     excluir_str = ','.join(map(str, sucursales_excluir)) if sucursales_excluir else '0'
 
@@ -228,12 +245,20 @@ def get_detventas_kilos(conn, fecha_inicio, fecha_fin, sucursales_excluir=[4]):
                 THEN ISNULL(h.ARTCOMP1CANT, 0) + ISNULL(h.ARTCOMP2CANT, 0) + ISNULL(h.ARTCOMP3CANT, 0)
                 ELSE ISNULL(h.ARTPESO, 0)
             END
-        )) as KILOS
+        )) as KILOS,
+        SUM(CASE WHEN v.VTAOPERACION = 'VL' THEN dv.CANT * (
+            CASE
+                WHEN a.ARTTIPO = 'ELABORADO'
+                THEN ISNULL(h.ARTCOMP1CANT, 0) + ISNULL(h.ARTCOMP2CANT, 0) + ISNULL(h.ARTCOMP3CANT, 0)
+                ELSE ISNULL(h.ARTPESO, 0)
+            END) ELSE 0 END) as KILOS_CLUB,
+        SUM(CASE WHEN p.ARTTIPO = 'PROMOCION' THEN dv.CANT * dv.PRECIO ELSE 0 END) as PROMOS
     FROM DETVENTAS dv
     INNER JOIN VENTAS v ON dv.VENTA = v.VENTA
         AND dv.SUCURSAL = v.SUCURSAL
         AND dv.CAJA = v.CAJA
     LEFT JOIN ARTICULOS a ON dv.ARTICULO = a.ARTICULO
+    LEFT JOIN ARTICULOS p ON dv.PROMOCION = p.ARTICULO
     LEFT JOIN ARTICULOSHISTORICO h ON dv.ARTVERSION = h.IDHISTORICO
     WHERE v.VTAFECHA >= ?
       AND v.VTAFECHA < ?
@@ -289,6 +314,42 @@ def get_tarjetas(conn, fecha_inicio, fecha_fin, sucursales_excluir=[4]):
     """
     df = pd.read_sql(query, conn, params=[fecha_inicio, fecha_fin])
     return df
+
+def get_clima(conn, fecha_inicio, fecha_fin):
+    """
+    Clima hora por hora de cada sucursal, del DWH (CLIMA_ZONA_HORA).
+
+    Se trae una hora de mas a cada lado del periodo para cubrir la hora entera
+    de la primera y la ultima venta. Si el DWH no esta disponible, el informe
+    sale igual con las columnas de clima vacias: el clima suma contexto pero
+    no puede frenar el informe de ventas.
+    """
+    query = f"""
+    SELECT SUCURSAL, CLIMA_KEY_HORA, SENSACION_TERMICA, PRECIPITACION
+    FROM {BASE_DWH}.dbo.CLIMA_ZONA_HORA
+    WHERE BASE_ORIGEN = ?
+      AND CLIMA_KEY_HORA >= DATEADD(hour, -1, ?)
+      AND CLIMA_KEY_HORA <= DATEADD(hour, 1, ?)
+    """
+    try:
+        return pd.read_sql(query, conn, params=[BASE_ORIGEN, fecha_inicio, fecha_fin])
+    except Exception:
+        return pd.DataFrame(columns=["SUCURSAL", "CLIMA_KEY_HORA",
+                                     "SENSACION_TERMICA", "PRECIPITACION"])
+
+def get_cajas_delivery(conn):
+    """
+    Cajas de delivery de cada sucursal (CFG_CAJA_DELIVERY del DWH). Es la misma
+    tabla que usa la pantalla web: si un local cambia de caja, se cambia ahi y
+    salen bien los dos informes.
+    """
+    query = f"""
+    SELECT SUCURSAL, CAJA FROM {BASE_DWH}.dbo.CFG_CAJA_DELIVERY WHERE BASE_ORIGEN = ?
+    """
+    try:
+        return pd.read_sql(query, conn, params=[BASE_ORIGEN])
+    except Exception:
+        return pd.DataFrame(columns=["SUCURSAL", "CAJA"])
 
 # ============================================================================
 # FUNCIONES DE PROCESAMIENTO
@@ -402,11 +463,69 @@ def procesar_kilos(df_kilos, suc_map):
         turno = int(row['TURNO'])
         caja = int(row['CAJA'])
         cajero = texto(row['USULOGIN'], "Desconocido").title()
-        kg = float(row['KILOS']) if pd.notna(row['KILOS']) else 0
+        def num(col):
+            return float(row[col]) if col in row and pd.notna(row[col]) else 0.0
 
-        kilos[(suc_key, turno, caja, cajero)] = kg
+        kilos[(suc_key, turno, caja, cajero)] = {
+            "kilos": num('KILOS'),
+            "kilos_club": num('KILOS_CLUB'),
+            "promos": num('PROMOS'),
+        }
 
     return kilos
+
+def procesar_clima(df_clima, suc_map):
+    """{sucursal: {hora_redonda: (sensacion_termica, precipitacion)}}"""
+    clima = defaultdict(dict)
+    for _, row in df_clima.iterrows():
+        suc_key = suc_map.get(row['SUCURSAL'], f"Suc{row['SUCURSAL']}").strip()
+        hora = pd.Timestamp(row['CLIMA_KEY_HORA']).to_pydatetime().replace(minute=0, second=0, microsecond=0)
+        sens = float(row['SENSACION_TERMICA']) if pd.notna(row['SENSACION_TERMICA']) else None
+        prec = float(row['PRECIPITACION']) if pd.notna(row['PRECIPITACION']) else None
+        clima[suc_key][hora] = (sens, prec)
+    return clima
+
+def clima_ventana(clima_suc, desde, hasta):
+    """
+    Sensacion termica promedio y lluvia (mm) entre la hora de `desde` y la de
+    `hasta`, inclusive. Es la misma regla que usp_InformeDiarioGrido, para que
+    el Excel y la web den el mismo numero.
+    """
+    if not clima_suc or desde is None or hasta is None:
+        return None, None
+    h = pd.Timestamp(desde).to_pydatetime().replace(minute=0, second=0, microsecond=0)
+    fin = pd.Timestamp(hasta).to_pydatetime().replace(minute=0, second=0, microsecond=0)
+    sens, prec = [], []
+    while h <= fin:
+        if h in clima_suc:
+            s, p = clima_suc[h]
+            if s is not None:
+                sens.append(s)
+            if p is not None:
+                prec.append(p)
+        h += timedelta(hours=1)
+    # Promedio y suma en Decimal: en float, 21,85 puede quedar 21,8499999 y
+    # redondear para abajo, y la web (SQL, decimal exacto) da 21,9.
+    sens_d = [Decimal(str(s)) for s in sens]
+    prec_d = [Decimal(str(p)) for p in prec]
+    return (redondear1(sum(sens_d) / len(sens_d)) if sens_d else None,
+            redondear1(sum(prec_d)) if prec_d else None)
+
+def redondear1(x):
+    """
+    Redondea a un decimal como SQL Server (mitad hacia arriba: 14,25 -> 14,3).
+    round() de Python redondea al par (14,25 -> 14,2) y hacia que el Excel y
+    la web mostraran distinto el mismo dato.
+    """
+    return float(Decimal(str(x)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+
+def procesar_cajas_delivery(df_cajas, suc_map):
+    """{sucursal: {cajas}} a partir de CFG_CAJA_DELIVERY."""
+    cajas = defaultdict(set)
+    for _, row in df_cajas.iterrows():
+        suc_key = suc_map.get(row['SUCURSAL'], f"Suc{row['SUCURSAL']}").strip()
+        cajas[suc_key].add(int(row['CAJA']))
+    return cajas
 
 def procesar_turnos_extra(df_turnos, suc_map):
     """Procesa datos extra de turnos (diferencia de caja)."""
@@ -449,8 +568,17 @@ def calcular_totales_sucursal(turnos):
 
     return totales
 
-def ensamblar(turnos, kilos_raw, socios_raw, turnos_extra):
-    """Ensambla datos finales por sucursal."""
+def ensamblar(turnos, kilos_raw, socios_raw, turnos_extra, clima=None, cajas_delivery=None):
+    """
+    Ensambla datos finales por sucursal.
+
+    Devuelve {sucursal: [filas]}. Ademas deja en la clave especial "_suc"
+    el clima de cada sucursal en toda la jornada, que es lo que va en el
+    subtotal: sumar la lluvia de los turnos la contaria dos veces cuando dos
+    cajas trabajan a la vez.
+    """
+    clima = clima or {}
+    cajas_delivery = cajas_delivery or {}
     # Calcular totales por sucursal
     suc_totales = defaultdict(float)
     for t in turnos.values():
@@ -471,9 +599,13 @@ def ensamblar(turnos, kilos_raw, socios_raw, turnos_extra):
         for t in suc_turnos:
             key = (t["sucursal"], t["turno"], t["caja"], t["cajero"])
 
-            # Kilos (proporcional o directo si hay datos)
-            kg_directo = kilos_raw.get(key, 0)
-            kg = round(kg_directo, 1)
+            # Kilos, kilos club y promos del turno
+            kd = kilos_raw.get(key, {})
+            kg = redondear1(kd.get("kilos", 0))
+            kg_club = redondear1(kd.get("kilos_club", 0))
+            promos = kd.get("promos", 0.0)
+
+            sens, lluvia = clima_ventana(clima.get(suc), t["min_fecha"], t["max_fecha"])
 
             # Socios (solo al primer turno del cajero)
             cajero_lower = t["cajero"].lower()
@@ -498,11 +630,31 @@ def ensamblar(turnos, kilos_raw, socios_raw, turnos_extra):
                 "sv_acept": t["sv_aceptadas"],
                 "socios": socios_val,
                 "ventas_club": t["ventas_club"],
+                "kilos_club": kg_club,
+                "promos": promos,
                 "anuladas": t["anuladas"],
                 "dif_caja": extra.get("dif_caja", 0),
+                "es_delivery": t["caja"] in cajas_delivery.get(suc, set()),
+                "sensacion_termica": sens,
+                "lluvia_mm": lluvia,
             })
 
         resultado[suc] = filas
+
+    # Clima de cada sucursal en la jornada: de la primera venta a la ultima.
+    clima_suc = {}
+    for suc in ORDEN_SUC:
+        suc_turnos = [t for t in turnos.values() if t["sucursal"] == suc and t["min_fecha"]]
+        if suc_turnos:
+            desde = min(t["min_fecha"] for t in suc_turnos)
+            hasta = max(t["max_fecha"] for t in suc_turnos)
+            clima_suc[suc] = clima_ventana(clima.get(suc), desde, hasta)
+        else:
+            clima_suc[suc] = (None, None)
+    resultado["_suc"] = {
+        "clima": clima_suc,
+        "cajas_delivery": {s: sorted(cajas_delivery.get(s, set())) for s in ORDEN_SUC},
+    }
 
     return resultado
 
@@ -529,7 +681,26 @@ def set_cell(ws, row, col, value, bg, fg="FF000000", bold=False, size=9,
         c.number_format = fmt
     return c
 
-def escribir_subtotal(ws, r, nombre, first, last, bg):
+# ----------------------------------------------------------------------------
+# Columnas del Excel (desde el 02/10/2026)
+#   A Sucursal/Cajero  B Turno  C Caja  D Horario  E Horas  F Kilos
+#   G Ventas  H Ticket prom.
+#   I Tickets  J SV activadas  K SV aceptadas  L %SV            (SOBREVENTAS)
+#   M Promos ($)  N %Promos
+#   O Nuevos socios  P Ventas Club  Q Kilos Club  R %VCG/Kilos   (CLUB GRIDO)
+#   S Anuladas  T Dif. de caja
+#   U Sensacion termica prom.  V Lluvia (mm)                    (CLIMA)
+# U y V reemplazan las columnas reservadas Personal / Productividad / Clima,
+# a pedido de Damian. %VCG pasa a ser Kilos Club / Kilos (Q/F) en vez de
+# Ventas Club / Ventas (P/G).
+# ----------------------------------------------------------------------------
+COLOR_DELIVERY = "FF6C3483"
+COLOR_CLIMA_HDR = "FF117A65"
+COLOR_CLIMA_CELL = "FFE8F6F3"
+FMT_GRADOS = '0.0"°"'
+FMT_MM = "0.0"
+
+def escribir_subtotal(ws, r, nombre, first, last, bg, clima_suc=(None, None)):
     set_cell(ws, r, 1, nombre, bg, "FFFFFFFF", bold=True, h="left")
     set_cell(ws, r, 2, "Todos", bg, "FFFFFFFF", bold=True)
     formulas = {
@@ -545,19 +716,30 @@ def escribir_subtotal(ws, r, nombre, first, last, bg):
         14: f'=IFERROR(M{r}/G{r},"")',
         15: f"=SUM(O{first}:O{last})",
         16: f"=SUM(P{first}:P{last})",
-        17: f'=IFERROR(P{r}/G{r},"")',
-        18: f"=SUM(R{first}:R{last})",
+        17: f"=SUM(Q{first}:Q{last})",
+        18: f'=IFERROR(Q{r}/F{r},"")',
         19: f"=SUM(S{first}:S{last})",
+        20: f"=SUM(T{first}:T{last})",
+        # El clima del subtotal es el de la sucursal en toda la jornada, no
+        # una suma de turnos: dos cajas a la vez contarian dos veces la lluvia.
+        21: clima_suc[0],
+        22: clima_suc[1],
     }
-    fmts = {7: "$#,##0", 8: "$#,##0", 12: "0.0%", 13: "$#,##0", 14: "0.0%", 16: "$#,##0", 17: "0.0%"}
-    for col in range(3, 20):
+    fmts = {7: "$#,##0", 8: "$#,##0", 12: "0.0%", 13: "$#,##0", 14: "0.0%",
+            16: "$#,##0", 18: "0.0%", 20: "$#,##0", 21: FMT_GRADOS, 22: FMT_MM}
+    for col in range(3, 23):
         val = formulas.get(col, None)
         set_cell(ws, r, col, val, bg, "FFFFFFFF", bold=True, fmt=fmts.get(col))
 
 def escribir_cajero(ws, r, fila, bg_std, bg_sv, bg_ly):
     set_cell(ws, r, 1, f"    {fila['cajero']}", bg_std, "FF1A1A2E", h="left")
     set_cell(ws, r, 2, fila["turno"], bg_std, "FF5D6D7E")
-    set_cell(ws, r, 3, fila["caja"], bg_std, "FF5D6D7E")
+    # La caja de delivery se marca en la propia celda: "2 DEL" en violeta.
+    # La leyenda "Cajas Delivery" de arriba dice cual es en cada sucursal.
+    if fila.get("es_delivery"):
+        set_cell(ws, r, 3, f"{fila['caja']} DEL", COLOR_DELIVERY, "FFFFFFFF", bold=True)
+    else:
+        set_cell(ws, r, 3, fila["caja"], bg_std, "FF5D6D7E")
     set_cell(ws, r, 4, fila["horario"], bg_std, "FF1A1A2E")
     set_cell(ws, r, 5, fila["horas"], bg_std, "FF1A1A2E")
     set_cell(ws, r, 6, fila["kilos"], bg_std, "FF1A1A2E")
@@ -567,13 +749,16 @@ def escribir_cajero(ws, r, fila, bg_std, bg_sv, bg_ly):
     set_cell(ws, r, 10, fila["sv_act"], bg_sv, "FF1A1A2E")
     set_cell(ws, r, 11, fila["sv_acept"], bg_sv, "FF1A1A2E")
     set_cell(ws, r, 12, f'=IFERROR(K{r}/J{r},"")', bg_sv, "FF1A1A2E", fmt="0.0%")
-    set_cell(ws, r, 13, 0, bg_std, "FF1A1A2E", fmt="$#,##0")
+    set_cell(ws, r, 13, fila.get("promos", 0), bg_std, "FF1A1A2E", fmt="$#,##0")
     set_cell(ws, r, 14, f'=IFERROR(M{r}/G{r},"")', bg_std, "FF1A1A2E", fmt="0.0%")
     set_cell(ws, r, 15, fila["socios"], bg_ly, "FF1A1A2E")
     set_cell(ws, r, 16, fila["ventas_club"], bg_ly, "FF1A1A2E", fmt="$#,##0")
-    set_cell(ws, r, 17, f'=IFERROR(P{r}/G{r},"")', bg_ly, "FF1A1A2E", fmt="0.0%")
-    set_cell(ws, r, 18, fila["anuladas"], bg_std, "FF1A1A2E")
-    set_cell(ws, r, 19, fila.get("dif_caja", 0), bg_std, "FF1A1A2E", fmt="$#,##0")
+    set_cell(ws, r, 17, fila.get("kilos_club", 0), bg_ly, "FF1A1A2E")
+    set_cell(ws, r, 18, f'=IFERROR(Q{r}/F{r},"")', bg_ly, "FF1A1A2E", fmt="0.0%")
+    set_cell(ws, r, 19, fila["anuladas"], bg_std, "FF1A1A2E")
+    set_cell(ws, r, 20, fila.get("dif_caja", 0), bg_std, "FF1A1A2E", fmt="$#,##0")
+    set_cell(ws, r, 21, fila.get("sensacion_termica"), COLOR_CLIMA_CELL, "FF1A1A2E", fmt=FMT_GRADOS)
+    set_cell(ws, r, 22, fila.get("lluvia_mm"), COLOR_CLIMA_CELL, "FF1A1A2E", fmt=FMT_MM)
 
 def construir_excel(datos_suc, date_str):
     """Construye el archivo Excel con el formato del informe."""
@@ -581,10 +766,14 @@ def construir_excel(datos_suc, date_str):
     ws = wb.active
     ws.title = "Informe Diario"
 
+    info_suc = datos_suc.get("_suc", {})
+    clima_suc = info_suc.get("clima", {})
+    cajas_delivery = info_suc.get("cajas_delivery", {})
+
     # Anchos de columna
-    anchos = {"A":22,"B":8,"C":5,"D":16,"E":7,"F":7,"G":14,"H":12,
+    anchos = {"A":22,"B":8,"C":8,"D":16,"E":7,"F":7,"G":14,"H":12,
               "I":8,"J":8,"K":8,"L":7,"M":12,"N":8,"O":8,"P":13,
-              "Q":7,"R":8,"S":9,"T":10,"U":13,"V":8}
+              "Q":8,"R":8,"S":9,"T":10,"U":10,"V":8}
     for col, w in anchos.items():
         ws.column_dimensions[col].width = w
 
@@ -592,12 +781,11 @@ def construir_excel(datos_suc, date_str):
     for r, h in altos.items():
         ws.row_dimensions[r].height = h
 
-    # Fila 1 - Titulo
-    ws.merge_cells("A1:S1")
+    # Fila 1 - Titulo (ya no hay columnas "a desarrollar a futuro": U y V
+    # pasaron a ser el clima)
+    ws.merge_cells("A1:V1")
     set_cell(ws, 1, 1, f"GRIDO - INFORME DIARIO DE VENTAS | {date_str}",
              COLORS["header_dark"], "FFFFFFFF", bold=True, size=14, h="left")
-    ws.merge_cells("T1:V1")
-    set_cell(ws, 1, 20, "A desarrollar a futuro", COLORS["future"], COLORS["future_txt"], size=9)
 
     # Fila 2 - Subtitulo
     ws.merge_cells("A2:V2")
@@ -623,17 +811,28 @@ def construir_excel(datos_suc, date_str):
 
     ws.merge_cells("I8:L8")
     set_cell(ws, 8, 9, "SOBREVENTAS", "FF6B4226", "FFFFFFFF", bold=True, size=9)
-    ws.merge_cells("O8:Q8")
+    ws.merge_cells("O8:R8")
     set_cell(ws, 8, 15, "CLUB GRIDO", "FF1A5276", "FFFFFFFF", bold=True, size=9)
+    ws.merge_cells("U8:V8")
+    set_cell(ws, 8, 21, "CLIMA", COLOR_CLIMA_HDR, "FFFFFFFF", bold=True, size=9)
+
+    # Fila 6 - Leyenda de cajas de delivery (pedido de Damian del 02/10/2026).
+    # Sale de CFG_CAJA_DELIVERY, la misma tabla que usa la web.
+    partes = [f"{SUC_DISPLAY[s]}: {', '.join(str(c) for c in cajas_delivery.get(s, []))}"
+              for s in ["Escalada", "Fiorito", "Lanus"] if cajas_delivery.get(s)]
+    if partes:
+        ws.merge_cells("A6:V6")
+        set_cell(ws, 6, 1, "CAJAS DELIVERY      " + "      ".join(partes),
+                 COLOR_DELIVERY, "FFFFFFFF", bold=True, size=9, h="left")
 
     # Fila 9 - Headers tabla
     hdrs_std = [(1,"Sucursal / Cajero"),(2,"Turno"),(3,"Caja"),(4,"Horario"),
                 (5,"Horas"),(6,"Kilos"),(7,"Ventas ($)"),(8,"Ticket\nProm. ($)")]
     hdrs_sv = [(9,"Tickets"),(10,"SV\nActivadas"),(11,"SV\nAceptadas"),(12,"%SV")]
     hdrs_mid = [(13,"Promos ($)"),(14,"%Promos")]
-    hdrs_ly = [(15,"Nuevos\nSocios"),(16,"Ventas\nClub Grido"),(17,"%VCG\n/Ventas")]
-    hdrs_end = [(18,"Anuladas"),(19,"Dif.\nde Caja")]
-    hdrs_fut = [(20,"Personal"),(21,"Productividad"),(22,"Clima")]
+    hdrs_ly = [(15,"Nuevos\nSocios"),(16,"Ventas\nClub Grido"),(17,"Kilos\nClub"),(18,"%VCG\n/Kilos")]
+    hdrs_end = [(19,"Anuladas"),(20,"Dif.\nde Caja")]
+    hdrs_clima = [(21,"Sens. Termica\nProm."),(22,"Lluvia\n(mm)")]
 
     for col, txt in hdrs_std:
         set_cell(ws, 9, col, txt, COLORS["col_hdr"], "FFFFFFFF", bold=True, size=9, wrap=True)
@@ -645,8 +844,8 @@ def construir_excel(datos_suc, date_str):
         set_cell(ws, 9, col, txt, COLORS["ly_hdr"], "FFFFFFFF", bold=True, size=9, wrap=True)
     for col, txt in hdrs_end:
         set_cell(ws, 9, col, txt, COLORS["col_hdr"], "FFFFFFFF", bold=True, size=9, wrap=True)
-    for col, txt in hdrs_fut:
-        set_cell(ws, 9, col, txt, COLORS["future"], COLORS["future_txt"], bold=True, size=9, wrap=True)
+    for col, txt in hdrs_clima:
+        set_cell(ws, 9, col, txt, COLOR_CLIMA_HDR, "FFFFFFFF", bold=True, size=9, wrap=True)
 
     # Escribir sucursales
     SUC_COLORS = {
@@ -667,7 +866,8 @@ def construir_excel(datos_suc, date_str):
         first_cajero = current_row + 1
         last_cajero = current_row + len(filas)
 
-        escribir_subtotal(ws, subtotal_row, SUC_DISPLAY[suc], first_cajero, last_cajero, bg_row)
+        escribir_subtotal(ws, subtotal_row, SUC_DISPLAY[suc], first_cajero, last_cajero, bg_row,
+                          clima_suc.get(suc, (None, None)))
         subtotal_rows[suc] = subtotal_row
         current_row += 1
 
@@ -698,13 +898,16 @@ def construir_excel(datos_suc, date_str):
         14: f'=IFERROR(M{r_total}/G{r_total},"")',
         15: f"={'+'.join([f'O{r}' for r in sub_rows])}",
         16: f"={'+'.join([f'P{r}' for r in sub_rows])}",
-        17: f'=IFERROR(P{r_total}/G{r_total},"")',
-        18: f"={'+'.join([f'R{r}' for r in sub_rows])}",
+        17: f"={'+'.join([f'Q{r}' for r in sub_rows])}",
+        18: f'=IFERROR(Q{r_total}/F{r_total},"")',
         19: f"={'+'.join([f'S{r}' for r in sub_rows])}",
+        20: f"={'+'.join([f'T{r}' for r in sub_rows])}",
+        # U y V (clima) quedan vacias en el TOTAL: el clima es de cada
+        # sucursal y un promedio entre zonas no describe a ninguna.
     }
-    fmts_total = {7:"$#,##0",8:"$#,##0",12:"0.0%",13:"$#,##0",14:"0.0%",16:"$#,##0",17:"0.0%"}
+    fmts_total = {7:"$#,##0",8:"$#,##0",12:"0.0%",13:"$#,##0",14:"0.0%",16:"$#,##0",18:"0.0%",20:"$#,##0"}
 
-    for col in range(2, 20):
+    for col in range(2, 23):
         val = total_formulas.get(col)
         set_cell(ws, r_total, col, val, COLORS["total_row"], "FFFFFFFF", bold=True,
                  size=10, fmt=fmts_total.get(col))
@@ -863,9 +1066,11 @@ def main():
                         kilos_raw = procesar_kilos(df_kilos, suc_map)
                         turnos_extra = procesar_turnos_extra(df_turnos, suc_map)
                         socios_raw = procesar_socios(df_tarjetas, suc_map)
+                        clima = procesar_clima(get_clima(conn, fecha_inicio, fecha_fin), suc_map)
+                        cajas = procesar_cajas_delivery(get_cajas_delivery(conn), suc_map)
 
                         # Ensamblar
-                        datos_suc = ensamblar(turnos, kilos_raw, socios_raw, turnos_extra)
+                        datos_suc = ensamblar(turnos, kilos_raw, socios_raw, turnos_extra, clima, cajas)
 
                         # Guardar en session state
                         st.session_state.datos_suc = datos_suc
