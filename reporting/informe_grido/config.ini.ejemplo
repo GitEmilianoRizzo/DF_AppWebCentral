@@ -1,0 +1,58 @@
+; ============================================================================
+; Informe Diario GRIDO - configuracion de la ejecucion automatica
+;
+; OJO: este archivo contiene una contrasena. No subirlo a ningun repositorio
+; ni compartirlo. Si se filtra, revocar la contrasena de aplicacion desde
+; https://myaccount.google.com/apppasswords
+; ============================================================================
+
+[base_datos]
+servidor = WIN-6ARG3SUELOE\SQLEXPRESS
+base = SRV_GRIDO_ZSUR
+; Dejar usuario y clave vacios para usar autenticacion Windows (Trusted),
+; que es lo que corresponde en este equipo.
+usuario =
+clave =
+
+[archivo]
+; Carpeta donde se deja una copia historica del Excel, despues de enviar el mail.
+; Acepta tanto la carpeta real como el acceso directo (.lnk) que crea Google
+; Drive para las carpetas compartidas: el script lo resuelve solo.
+; Dejar vacio para no copiar a ningun lado.
+carpeta_historico = G:\Other computers\Mi PC\Google Drive\Referentes.lnk
+
+[correo]
+servidor = smtp.gmail.com
+puerto = 587
+remitente = backupautomatico1234@gmail.com
+; usuario: si se deja vacio, se usa el remitente.
+usuario =
+; clave: NO es la contrasena normal de Gmail. Es una "contrasena de aplicacion"
+; de 16 caracteres que se genera en https://myaccount.google.com/apppasswords
+; (requiere tener la verificacion en 2 pasos activada en la cuenta).
+; Se puede pegar con o sin espacios.
+; La anterior ("Informe_GRIDO_01", 01/09/2026) quedo revocada al desactivarse
+; la verificacion en 2 pasos: Google las mata de forma permanente y volver a
+; activar el 2FA NO las restaura. Hay que generar una nueva.
+; Generada el 21/09/2026 con el nombre "Informe_GRIDO_02".
+clave = PEGAR_AQUI_LA_CONTRASENA_DE_APLICACION
+; Varios destinatarios: separados por coma.
+; controlinternoyrrhh agregado el 21/09/2026.
+destinatarios = emiliano.rizzo1@gmail.com, df.damianfernandez@gmail.com,
+    gridoreferenteescalada@gmail.com, auxiliaradmgrido@gmail.com,
+    controlinternoyrrhh@gmail.com
+
+; A quien se avisa cuando el informe sale SIN VENTAS. Es una lista corta a
+; proposito: esa alerta es un problema tecnico y no tiene por que llegarles a
+; los referentes de cada sucursal.
+destinatarios_alerta = emiliano.rizzo1@gmail.com, df.damianfernandez@gmail.com
+
+[control]
+; Minimo de tickets para considerar valido el informe. Por debajo de este
+; numero NO se envia a los destinatarios habituales: sale una alerta con
+; asunto ERROR a destinatarios_alerta.
+;
+; Esta en 1 porque cualquier jornada real tiene al menos una venta. Si alguna
+; vez hay un dia legitimamente cerrado y se quiere mandar el informe igual,
+; correr a mano con --forzar-envio en vez de bajar este numero.
+tickets_minimos = 1

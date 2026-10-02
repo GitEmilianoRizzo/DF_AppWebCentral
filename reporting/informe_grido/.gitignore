@@ -1,0 +1,6 @@
+# Copia local con la contrasena de Gmail: nunca al repositorio.
+config.ini
+salidas/
+logs/
+__pycache__/
+.venv/

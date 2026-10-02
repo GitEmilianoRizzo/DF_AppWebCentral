@@ -1,0 +1,53 @@
+============================================
+  INFORME DIARIO GRIDO - Instrucciones
+============================================
+
+REQUISITOS PREVIOS
+------------------
+1. Windows 10 o superior
+2. Python 3.10 o superior instalado
+   - Descargar de: https://www.python.org/downloads/
+   - IMPORTANTE: Durante la instalacion marcar "Add Python to PATH"
+3. ODBC Driver 17 for SQL Server instalado
+   - Descargar de: https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server
+4. Acceso de red al servidor de base de datos (PILLOWSRV001)
+
+
+COMO EJECUTAR
+-------------
+1. Hacer doble clic en "EJECUTAR_INFORME.bat"
+2. La primera vez instalara las dependencias automaticamente (puede tardar unos minutos)
+3. Se abrira el navegador con la aplicacion
+4. Configurar la conexion a la base de datos en el panel izquierdo
+5. Seleccionar la fecha del informe
+6. Click en "Generar Informe"
+7. Descargar el Excel generado
+
+
+CONFIGURACION DE CONEXION
+-------------------------
+- Servidor: PILLOWSRV001 (o el nombre/IP del servidor SQL)
+- Base de Datos: Gestion_DB_Fernandez
+- Autenticacion: Windows (Trusted) o SQL Server segun corresponda
+
+
+ARCHIVOS INCLUIDOS
+------------------
+- EJECUTAR_INFORME.bat  : Script para iniciar la aplicacion
+- informe_grido.py      : Codigo fuente de la aplicacion
+- requirements.txt      : Lista de dependencias Python
+- LEEME.txt             : Este archivo
+
+
+SOPORTE
+-------
+En caso de problemas, verificar:
+1. Python esta instalado y en el PATH (abrir CMD y escribir: python --version)
+2. ODBC Driver 17 esta instalado
+3. Hay conectividad de red al servidor de base de datos
+4. Las credenciales de acceso son correctas
+
+
+============================================
+  Generado automaticamente - Agosto 2026
+============================================
