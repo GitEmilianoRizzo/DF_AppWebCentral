@@ -73,22 +73,31 @@ const GRIS_REF = 'text-[#C3C3C3]'
 const grados = (n: number | null) => (n === null ? '' : num(n, 1) + '°')
 const mm = (n: number | null) => (n === null ? '' : num(n, 1))
 
+interface Clima { sens: number | null; lluvia: number | null; condicion: string | null }
+
 /**
- * Clima de una sucursal para su subtotal. No se arma con los turnos: dos
- * cajas trabajando a la vez sumarian dos veces la misma lluvia. Sale de los
- * valores de la jornada entera que manda el SP (suc_*), uno por dia: con un
- * solo dia es ese valor; con un rango, la lluvia se suma y la sensacion se
- * promedia entre dias.
+ * Clima de zona de un subtotal (nivel 'suc') o del TOTAL (nivel 'dia'). No se
+ * arma con los turnos: dos cajas trabajando a la vez sumarian dos veces la
+ * misma lluvia. Sale de lo que manda el SP para la jornada, uno por dia: con
+ * un solo dia es ese valor; con un rango, la lluvia se suma, la sensacion se
+ * promedia y la condicion es la que mas dias se repitio.
  */
-function climaSucursal(filas: Fila[]) {
+function climaAgregado(filas: Fila[], nivel: 'suc' | 'dia'): Clima {
   const porDia = new Map<string, Fila>()
   for (const f of filas) if (!porDia.has(f.fecha_operativa)) porDia.set(f.fecha_operativa, f)
   const dias = [...porDia.values()]
-  const sens = dias.map((d) => d.suc_sensacion_termica).filter((v): v is number => v !== null)
-  const lluvia = dias.map((d) => d.suc_lluvia_mm).filter((v): v is number => v !== null)
+  const val = (d: Fila) => nivel === 'suc'
+    ? [d.suc_clima_zona_sens, d.suc_clima_zona_lluvia, d.suc_clima_zona_condicion] as const
+    : [d.dia_clima_zona_sens, d.dia_clima_zona_lluvia, d.dia_clima_zona_condicion] as const
+  const sens = dias.map((d) => val(d)[0]).filter((v): v is number => v !== null)
+  const lluvia = dias.map((d) => val(d)[1]).filter((v): v is number => v !== null)
+  const cuenta = new Map<string, number>()
+  for (const d of dias) { const c = val(d)[2]; if (c) cuenta.set(c, (cuenta.get(c) ?? 0) + 1) }
+  const condicion = [...cuenta.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
   return {
     sens: sens.length ? sens.reduce((a, b) => a + b, 0) / sens.length : null,
     lluvia: lluvia.length ? lluvia.reduce((a, b) => a + b, 0) : null,
+    condicion,
   }
 }
 
@@ -130,6 +139,8 @@ export function InformeDiarioGrido() {
   }, [filas])
 
   const total = useMemo(() => filas.reduce(acumular, cero()), [filas])
+
+  const climaTotal = useMemo(() => climaAgregado(filas, 'dia'), [filas])
 
   const COLS = 22
 
@@ -241,12 +252,12 @@ export function InformeDiarioGrido() {
               <Th className="bg-[#8D5524]">%SV</Th>
               <Th>Promos ($)</Th><Th>%Promos</Th>
               <Th className="bg-[#1F618D]">Nuevos Socios</Th>
-              <Th className="bg-[#1F618D]">Ventas Club Grido</Th>
-              <Th className="bg-[#1F618D]">Kilos Club</Th>
-              <Th className="bg-[#1F618D]">%VCG /Kilos</Th>
+              <Th className="bg-[#1F618D]">Kilos Club Grido</Th>
+              <Th className="bg-[#1F618D]">%Kilos CG /Kilos</Th>
               <Th>Anuladas</Th><Th>Dif. de Caja</Th>
-              <Th className="bg-[#117A65]">Sens. Térmica Prom.</Th>
-              <Th className="bg-[#117A65]">Lluvia (mm)</Th>
+              <Th className="bg-[#1A5276]">Sensación térmica prom. (°C)</Th>
+              <Th className="bg-[#1A5276]">Lluvia (mm)</Th>
+              <Th className="bg-[#1A5276]">Condición climática</Th>
             </tr>
           </thead>
 
@@ -265,7 +276,7 @@ export function InformeDiarioGrido() {
 
             {!cargando && grupos.map((g) => {
               const sub = g.filas.reduce(acumular, cero())
-              const climaSub = climaSucursal(g.filas)
+              const climaSub = climaAgregado(g.filas, 'suc')
               const color = COLOR_SUCURSAL[g.rotulo] ?? { barra: 'bg-slate-600', fila: 'bg-muted/40' }
               return (
                 // La key va en el Fragment, que es el elemento que devuelve el
@@ -288,13 +299,13 @@ export function InformeDiarioGrido() {
                     <Td>{money(sub.promos)}</Td>
                     <Td>{pct(div(sub.promos, sub.ventas))}</Td>
                     <Td>{num(sub.socios)}</Td>
-                    <Td>{money(sub.club)}</Td>
                     <Td>{num(sub.kilosClub, 1)}</Td>
                     <Td>{pct(div(sub.kilosClub, sub.kilos))}</Td>
                     <Td>{num(sub.anuladas)}</Td>
                     <Td>{money(sub.dif)}</Td>
                     <Td>{grados(climaSub.sens)}</Td>
                     <Td>{mm(climaSub.lluvia)}</Td>
+                    <Td className="text-left">{climaSub.condicion ?? ''}</Td>
                   </tr>
 
                   {/* cajeros */}
@@ -332,13 +343,13 @@ export function InformeDiarioGrido() {
                         <Td>{money(f.promos)}</Td>
                         <Td>{pct(div(f.promos, f.ventas))}</Td>
                         <Td>{num(f.socios)}</Td>
-                        <Td>{money(f.ventas_club)}</Td>
                         <Td>{num(f.kilos_club, 1)}</Td>
                         <Td>{pct(div(f.kilos_club, f.kilos))}</Td>
                         <Td>{num(f.anuladas)}</Td>
                         <Td>{money(f.dif_caja)}</Td>
-                        <Td>{grados(f.sensacion_termica)}</Td>
-                        <Td>{mm(f.lluvia_mm)}</Td>
+                        <Td>{grados(f.clima_zona_sens)}</Td>
+                        <Td>{mm(f.clima_zona_lluvia)}</Td>
+                        <Td className="text-left">{f.clima_zona_condicion ?? ''}</Td>
                       </tr>
                     )
                   })}
@@ -364,13 +375,14 @@ export function InformeDiarioGrido() {
                 <Td>{money(total.promos)}</Td>
                 <Td>{pct(div(total.promos, total.ventas))}</Td>
                 <Td>{num(total.socios)}</Td>
-                <Td>{money(total.club)}</Td>
                 <Td>{num(total.kilosClub, 1)}</Td>
                 <Td>{pct(div(total.kilosClub, total.kilos))}</Td>
                 <Td>{num(total.anuladas)}</Td>
                 <Td>{money(total.dif)}</Td>
-                {/* El clima es de cada sucursal: un total entre zonas no dice nada. */}
-                <Td /><Td />
+                {/* Clima de zona de todas las horas del dia con algun turno. */}
+                <Td>{grados(climaTotal.sens)}</Td>
+                <Td>{mm(climaTotal.lluvia)}</Td>
+                <Td className="text-left">{climaTotal.condicion ?? ''}</Td>
               </tr>
             </tfoot>
           )}
@@ -380,10 +392,11 @@ export function InformeDiarioGrido() {
       <p className="text-xs text-muted-foreground max-w-4xl leading-relaxed">
         <strong className="font-medium">Promos</strong> es la venta de los articulos vendidos en una
         promocion, a precio de lista; no incluye sobreventas ni canjes de puntos.{' '}
-        <strong className="font-medium">%VCG</strong> son los kilos vendidos a socios Club Grido sobre
-        el total de kilos. <strong className="font-medium">Clima</strong>: sensacion termica promedio y
-        lluvia en las horas en que el turno tuvo ventas; en el subtotal, las de la sucursal en toda la
-        jornada. <strong className="font-medium">DELI</strong> es la caja de delivery.{' '}
+        <strong className="font-medium">%Kilos CG</strong> son los kilos vendidos a socios Club Grido
+        sobre el total de kilos. <strong className="font-medium">Clima</strong> (de la zona): sensacion
+        termica promedio, lluvia y condicion mas frecuente en las horas en que el turno tuvo ventas; en
+        el subtotal, las horas de la sucursal, y en el total, las de todo el dia.{' '}
+        <strong className="font-medium">DELI</strong> es la caja de delivery.{' '}
         <strong className="font-medium">Nuevos socios</strong> se
         imputa al primer turno de cada cajero en la jornada: las altas de tarjeta no guardan en que
         turno se hicieron, asi que repartirlas entre todos duplicaria el total.
