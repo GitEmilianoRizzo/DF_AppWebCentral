@@ -606,6 +606,20 @@ export interface InformeGridoFila {
   /** Clima de la sucursal en toda la jornada: es lo que va en el subtotal. */
   suc_sensacion_termica: number | null
   suc_lluvia_mm: number | null
+  /**
+   * Clima de zona (espec de Damian, oct-2026): turno, sucursal (subtotal) y
+   * dia (TOTAL). Es el que muestra la pantalla; los campos de arriba quedan
+   * por compatibilidad.
+   */
+  clima_zona_sens: number | null
+  clima_zona_lluvia: number | null
+  clima_zona_condicion: string | null
+  suc_clima_zona_sens: number | null
+  suc_clima_zona_lluvia: number | null
+  suc_clima_zona_condicion: string | null
+  dia_clima_zona_sens: number | null
+  dia_clima_zona_lluvia: number | null
+  dia_clima_zona_condicion: string | null
 }
 
 export const informeGridoApi = {

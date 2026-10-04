@@ -92,4 +92,33 @@ public class InformeGridoFilaDto
     /// <summary>Lluvia de la sucursal en toda la jornada: va en el subtotal.</summary>
     [JsonPropertyName("suc_lluvia_mm")]
     public decimal? SucLluviaMm { get; set; }
+
+    // Clima de zona (espec de Damian 01/10/2026): es el que muestran la web y
+    // el Excel desde octubre 2026. Turno, sucursal (subtotal) y dia (TOTAL).
+    [JsonPropertyName("clima_zona_sens")]
+    public decimal? ClimaZonaSens { get; set; }
+
+    [JsonPropertyName("clima_zona_lluvia")]
+    public decimal? ClimaZonaLluvia { get; set; }
+
+    [JsonPropertyName("clima_zona_condicion")]
+    public string? ClimaZonaCondicion { get; set; }
+
+    [JsonPropertyName("suc_clima_zona_sens")]
+    public decimal? SucClimaZonaSens { get; set; }
+
+    [JsonPropertyName("suc_clima_zona_lluvia")]
+    public decimal? SucClimaZonaLluvia { get; set; }
+
+    [JsonPropertyName("suc_clima_zona_condicion")]
+    public string? SucClimaZonaCondicion { get; set; }
+
+    [JsonPropertyName("dia_clima_zona_sens")]
+    public decimal? DiaClimaZonaSens { get; set; }
+
+    [JsonPropertyName("dia_clima_zona_lluvia")]
+    public decimal? DiaClimaZonaLluvia { get; set; }
+
+    [JsonPropertyName("dia_clima_zona_condicion")]
+    public string? DiaClimaZonaCondicion { get; set; }
 }
