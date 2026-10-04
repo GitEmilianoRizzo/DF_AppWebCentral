@@ -11,7 +11,7 @@ import streamlit as st
 import pandas as pd
 import pyodbc
 from datetime import datetime, timedelta
-from collections import defaultdict
+from collections import Counter, defaultdict
 from decimal import Decimal, ROUND_HALF_UP
 import io
 import openpyxl
@@ -315,27 +315,49 @@ def get_tarjetas(conn, fecha_inicio, fecha_fin, sucursales_excluir=[4]):
     df = pd.read_sql(query, conn, params=[fecha_inicio, fecha_fin])
     return df
 
+ZONA_CLIMA = ("Lanus Oeste", "Escalada", "Fiorito")
+
 def get_clima(conn, fecha_inicio, fecha_fin):
     """
-    Clima hora por hora de cada sucursal, del DWH (CLIMA_ZONA_HORA).
+    Clima DE ZONA hora por hora, del DWH (CLIMA_ZONA_HORA). Especificacion de
+    Damian del 01/10/2026 (ESPEC_Hojas_Damian_2026-10-01.md, seccion 2 bis):
 
-    Se trae una hora de mas a cada lado del periodo para cubrir la hora entera
-    de la primera y la ultima venta. Si el DWH no esta disponible, el informe
-    sale igual con las columnas de clima vacias: el clima suma contexto pero
-    no puede frenar el informe de ventas.
+    - El clima viene de un modelo en grilla: Lanus y Escalada dan lo mismo y
+      Fiorito difiere apenas. Lo que si cambia es CUANDO se cargo cada
+      ubicacion (pronostico contra dato ya ocurrido). Por eso, para cada hora
+      se toma la carga mas reciente entre las 3 ubicaciones; si empatan,
+      todas sus filas.
+    - Va de las 00 h de la jornada a las 02 h del dia siguiente: las horas de
+      la madrugada usan la CLIMA_KEY_HORA del dia siguiente.
+
+    Devuelve las filas (no el promedio): la condicion climatica se elige por
+    moda sobre todas ellas. Si el DWH no esta disponible, el informe sale con
+    el clima vacio: el clima suma contexto pero no puede frenar el informe.
     """
     query = f"""
-    SELECT SUCURSAL, CLIMA_KEY_HORA, SENSACION_TERMICA, PRECIPITACION
-    FROM {BASE_DWH}.dbo.CLIMA_ZONA_HORA
-    WHERE BASE_ORIGEN = ?
-      AND CLIMA_KEY_HORA >= DATEADD(hour, -1, ?)
-      AND CLIMA_KEY_HORA <= DATEADD(hour, 1, ?)
+    WITH cz AS (
+        SELECT CLIMA_KEY_HORA, SUCURSAL_NOMBRE, SENSACION_TERMICA, PRECIPITACION, DESCRIPCION_TIEMPO, FECHA_CARGA,
+               MAX(FECHA_CARGA) OVER (PARTITION BY CLIMA_KEY_HORA) AS ULTIMA_CARGA
+        FROM {BASE_DWH}.dbo.CLIMA_ZONA_HORA
+        WHERE BASE_ORIGEN = ?
+          AND SUCURSAL_NOMBRE IN ({",".join("?" * len(ZONA_CLIMA))})
+          AND CLIMA_KEY_HORA >= CAST(CAST(? AS date) AS datetime)
+          AND CLIMA_KEY_HORA <  DATEADD(hour, 26, CAST(CAST(? AS date) AS datetime)))
+    SELECT CLIMA_KEY_HORA, SUCURSAL_NOMBRE, SENSACION_TERMICA, PRECIPITACION, DESCRIPCION_TIEMPO
+    FROM cz WHERE FECHA_CARGA = ULTIMA_CARGA
+    -- El orden fija el desempate de la condicion (gana la que aparece
+    -- primero): usp_InformeDiarioGrido desempata igual, para dar lo mismo.
+    ORDER BY CLIMA_KEY_HORA, SUCURSAL_NOMBRE
     """
     try:
-        return pd.read_sql(query, conn, params=[BASE_ORIGEN, fecha_inicio, fecha_fin])
+        return pd.read_sql(query, conn, params=[BASE_ORIGEN, *ZONA_CLIMA, fecha_inicio, fecha_inicio])
     except Exception:
-        return pd.DataFrame(columns=["SUCURSAL", "CLIMA_KEY_HORA",
-                                     "SENSACION_TERMICA", "PRECIPITACION"])
+        # Que quede en el log: un clima vacio sin explicacion parece un dia sin datos.
+        import logging, traceback
+        logging.getLogger("informe").error("No se pudo leer el clima de zona; el informe sale sin clima:\n%s",
+                                           traceback.format_exc())
+        return pd.DataFrame(columns=["CLIMA_KEY_HORA", "SUCURSAL_NOMBRE", "SENSACION_TERMICA",
+                                     "PRECIPITACION", "DESCRIPCION_TIEMPO"])
 
 def get_cajas_delivery(conn):
     """
@@ -474,42 +496,68 @@ def procesar_kilos(df_kilos, suc_map):
 
     return kilos
 
-def procesar_clima(df_clima, suc_map):
-    """{sucursal: {hora_redonda: (sensacion_termica, precipitacion)}}"""
-    clima = defaultdict(dict)
+def procesar_clima(df_clima, suc_map=None):
+    """
+    {hora_redonda: (sensacion, precipitacion, [condiciones])}: el promedio de
+    las filas de la carga mas reciente de esa hora, y todas sus condiciones.
+    """
+    filas = defaultdict(list)
     for _, row in df_clima.iterrows():
-        suc_key = suc_map.get(row['SUCURSAL'], f"Suc{row['SUCURSAL']}").strip()
         hora = pd.Timestamp(row['CLIMA_KEY_HORA']).to_pydatetime().replace(minute=0, second=0, microsecond=0)
-        sens = float(row['SENSACION_TERMICA']) if pd.notna(row['SENSACION_TERMICA']) else None
-        prec = float(row['PRECIPITACION']) if pd.notna(row['PRECIPITACION']) else None
-        clima[suc_key][hora] = (sens, prec)
+        filas[hora].append(row)
+    clima = {}
+    for hora, rows in filas.items():
+        st = [Decimal(str(r['SENSACION_TERMICA'])) for r in rows if pd.notna(r['SENSACION_TERMICA'])]
+        pp = [Decimal(str(r['PRECIPITACION'])) for r in rows if pd.notna(r['PRECIPITACION'])]
+        cond = [texto(r['DESCRIPCION_TIEMPO']) for r in rows if texto(r['DESCRIPCION_TIEMPO'])]
+        clima[hora] = (sum(st) / len(st) if st else None, sum(pp) / len(pp) if pp else None, cond)
     return clima
 
-def clima_ventana(clima_suc, desde, hasta):
+def horas_turno(desde, hasta):
     """
-    Sensacion termica promedio y lluvia (mm) entre la hora de `desde` y la de
-    `hasta`, inclusive. Es la misma regla que usp_InformeDiarioGrido, para que
-    el Excel y la web den el mismo numero.
+    Horas de un turno, segun la espec de Damian: de la hora de inicio a la de
+    fin, y la de fin cuenta solo si tiene minutos ("10:18 a 15:00" son las
+    horas 10 a 14). Trabaja con fecha y hora, asi que un turno que pasa la
+    medianoche toma solo las horas del dia siguiente.
     """
-    if not clima_suc or desde is None or hasta is None:
-        return None, None
+    if desde is None or hasta is None:
+        return []
     h = pd.Timestamp(desde).to_pydatetime().replace(minute=0, second=0, microsecond=0)
-    fin = pd.Timestamp(hasta).to_pydatetime().replace(minute=0, second=0, microsecond=0)
-    sens, prec = [], []
-    while h <= fin:
-        if h in clima_suc:
-            s, p = clima_suc[h]
-            if s is not None:
-                sens.append(s)
-            if p is not None:
-                prec.append(p)
+    fin_dt = pd.Timestamp(hasta).to_pydatetime()
+    ult = fin_dt.replace(minute=0, second=0, microsecond=0)
+    if fin_dt.minute == 0 and ult > h:
+        ult -= timedelta(hours=1)
+    horas = []
+    while h <= ult:
+        horas.append(h)
         h += timedelta(hours=1)
-    # Promedio y suma en Decimal: en float, 21,85 puede quedar 21,8499999 y
-    # redondear para abajo, y la web (SQL, decimal exacto) da 21,9.
-    sens_d = [Decimal(str(s)) for s in sens]
-    prec_d = [Decimal(str(p)) for p in prec]
-    return (redondear1(sum(sens_d) / len(sens_d)) if sens_d else None,
-            redondear1(sum(prec_d)) if prec_d else None)
+    return horas
+
+def clima_de_horas(clima, horas):
+    """
+    (sensacion termica promedio, lluvia mm, condicion) para un conjunto de
+    horas: promedio de la sensacion de cada hora, suma de la lluvia de cada
+    hora, y la condicion que mas se repite.
+
+    La condicion se cuenta sobre TODAS las filas de la carga mas reciente y no
+    sobre una por hora: la consulta de la espec elige una por hora con MIN(),
+    o sea por orden alfabetico, y eso hacia ganar "Chaparrones" sobre
+    "Llovizna moderada" solo por empezar con C. En un empate gana la que
+    aparece primero en el turno.
+    """
+    st, pp, conds = [], [], []
+    for h in sorted(set(horas)):
+        if h in clima:
+            s, p, c = clima[h]
+            if s is not None:
+                st.append(s)
+            if p is not None:
+                pp.append(p)
+            conds.extend(c)
+    cond = Counter(conds).most_common(1)[0][0] if conds else None
+    return (redondear1(sum(st) / len(st)) if st else None,
+            redondear1(sum(pp)) if pp else None,
+            cond)
 
 def redondear1(x):
     """
@@ -573,9 +621,8 @@ def ensamblar(turnos, kilos_raw, socios_raw, turnos_extra, clima=None, cajas_del
     Ensambla datos finales por sucursal.
 
     Devuelve {sucursal: [filas]}. Ademas deja en la clave especial "_suc"
-    el clima de cada sucursal en toda la jornada, que es lo que va en el
-    subtotal: sumar la lluvia de los turnos la contaria dos veces cuando dos
-    cajas trabajan a la vez.
+    el clima de cada sucursal (subtotal) y el del dia (TOTAL). `clima` es el
+    clima de zona por hora (procesar_clima).
     """
     clima = clima or {}
     cajas_delivery = cajas_delivery or {}
@@ -585,6 +632,8 @@ def ensamblar(turnos, kilos_raw, socios_raw, turnos_extra, clima=None, cajas_del
         suc_totales[t["sucursal"]] += t["ventas"]
 
     resultado = {}
+    clima_suc = {}
+    horas_dia = set()
 
     for suc in ORDEN_SUC:
         suc_turnos = [t for t in turnos.values() if t["sucursal"] == suc]
@@ -594,6 +643,10 @@ def ensamblar(turnos, kilos_raw, socios_raw, turnos_extra, clima=None, cajas_del
 
         # Rastrear socios ya asignados
         cajeros_socios_asignados = set()
+        # Horas en que trabajo algun cajero de la sucursal: es el clima del
+        # subtotal. Union de horas y no suma de turnos: dos cajas a la vez
+        # contarian dos veces la lluvia.
+        horas_suc = set()
 
         filas = []
         for t in suc_turnos:
@@ -605,7 +658,10 @@ def ensamblar(turnos, kilos_raw, socios_raw, turnos_extra, clima=None, cajas_del
             kg_club = redondear1(kd.get("kilos_club", 0))
             promos = kd.get("promos", 0.0)
 
-            sens, lluvia = clima_ventana(clima.get(suc), t["min_fecha"], t["max_fecha"])
+            horas = horas_turno(t["min_fecha"], t["max_fecha"])
+            sens, lluvia, condicion = clima_de_horas(clima, horas)
+            horas_suc.update(horas)
+            horas_dia.update(horas)
 
             # Socios (solo al primer turno del cajero)
             cajero_lower = t["cajero"].lower()
@@ -637,22 +693,16 @@ def ensamblar(turnos, kilos_raw, socios_raw, turnos_extra, clima=None, cajas_del
                 "es_delivery": t["caja"] in cajas_delivery.get(suc, set()),
                 "sensacion_termica": sens,
                 "lluvia_mm": lluvia,
+                "condicion": condicion,
             })
 
         resultado[suc] = filas
+        clima_suc[suc] = clima_de_horas(clima, horas_suc)
 
-    # Clima de cada sucursal en la jornada: de la primera venta a la ultima.
-    clima_suc = {}
-    for suc in ORDEN_SUC:
-        suc_turnos = [t for t in turnos.values() if t["sucursal"] == suc and t["min_fecha"]]
-        if suc_turnos:
-            desde = min(t["min_fecha"] for t in suc_turnos)
-            hasta = max(t["max_fecha"] for t in suc_turnos)
-            clima_suc[suc] = clima_ventana(clima.get(suc), desde, hasta)
-        else:
-            clima_suc[suc] = (None, None)
     resultado["_suc"] = {
         "clima": clima_suc,
+        # TOTAL: todas las horas del dia con algun turno (espec de Damian).
+        "clima_total": clima_de_horas(clima, horas_dia),
         "cajas_delivery": {s: sorted(cajas_delivery.get(s, set())) for s in ORDEN_SUC},
     }
 
@@ -682,25 +732,27 @@ def set_cell(ws, row, col, value, bg, fg="FF000000", bold=False, size=9,
     return c
 
 # ----------------------------------------------------------------------------
-# Columnas del Excel (desde el 02/10/2026)
+# Columnas de la hoja "Informe Diario" (espec de Damian del 01/10/2026,
+# ESPEC_Hojas_Damian_2026-10-01.md seccion 2 bis, y su ejemplo del 27/09):
 #   A Sucursal/Cajero  B Turno  C Caja  D Horario  E Horas  F Kilos
 #   G Ventas  H Ticket prom.
 #   I Tickets  J SV activadas  K SV aceptadas  L %SV            (SOBREVENTAS)
 #   M Promos ($)  N %Promos
-#   O Nuevos socios  P Ventas Club  Q Kilos Club  R %VCG/Kilos   (CLUB GRIDO)
-#   S Anuladas  T Dif. de caja
-#   U Sensacion termica prom.  V Lluvia (mm)                    (CLIMA)
-# U y V reemplazan las columnas reservadas Personal / Productividad / Clima,
-# a pedido de Damian. %VCG pasa a ser Kilos Club / Kilos (Q/F) en vez de
-# Ventas Club / Ventas (P/G).
+#   O Nuevos socios  P Kilos Club Grido  Q %Kilos CG/Kilos      (CLUB GRIDO)
+#   R Anuladas  S Dif. de caja
+#   T Sensacion termica  U Lluvia (mm)  V Condicion            (CLIMA EN EL TURNO)
+# Kilos Club Grido REEMPLAZA a Ventas Club Grido ($): el Club se mide en kilos.
+# Las hojas Sobreventas, etc. leen J y K por posicion: no mover columnas.
+# Ademas, por decision de Emiliano (02/10/2026), distinto del ejemplo: la
+# caja de delivery dice DELI y Turno/Caja/Horario/Horas van en gris claro.
 # ----------------------------------------------------------------------------
-COLOR_DELIVERY = "FF6C3483"
-COLOR_CLIMA_HDR = "FF117A65"
 COLOR_CLIMA_CELL = "FFE8F6F3"
-FMT_GRADOS = '0.0"°"'
+GRIS_REF = "FFC3C3C3"     # letra de turno, caja, horario y horas (igual que la web)
+FMT_GRADOS = "0.0"
 FMT_MM = "0.0"
+FMT_KG = "#,##0.0"
 
-def escribir_subtotal(ws, r, nombre, first, last, bg, clima_suc=(None, None)):
+def escribir_subtotal(ws, r, nombre, first, last, bg, clima_suc=(None, None, None)):
     set_cell(ws, r, 1, nombre, bg, "FFFFFFFF", bold=True, h="left")
     set_cell(ws, r, 2, "Todos", bg, "FFFFFFFF", bold=True)
     formulas = {
@@ -716,30 +768,28 @@ def escribir_subtotal(ws, r, nombre, first, last, bg, clima_suc=(None, None)):
         14: f'=IFERROR(M{r}/G{r},"")',
         15: f"=SUM(O{first}:O{last})",
         16: f"=SUM(P{first}:P{last})",
-        17: f"=SUM(Q{first}:Q{last})",
-        18: f'=IFERROR(Q{r}/F{r},"")',
+        17: f'=IFERROR(P{r}/F{r},"")',
+        18: f"=SUM(R{first}:R{last})",
         19: f"=SUM(S{first}:S{last})",
-        20: f"=SUM(T{first}:T{last})",
-        # El clima del subtotal es el de la sucursal en toda la jornada, no
-        # una suma de turnos: dos cajas a la vez contarian dos veces la lluvia.
-        21: clima_suc[0],
-        22: clima_suc[1],
+        # Clima de todas las horas en que trabajo algun cajero de la sucursal.
+        20: clima_suc[0],
+        21: clima_suc[1],
+        22: clima_suc[2],
     }
     fmts = {7: "$#,##0", 8: "$#,##0", 12: "0.0%", 13: "$#,##0", 14: "0.0%",
-            16: "$#,##0", 18: "0.0%", 20: "$#,##0", 21: FMT_GRADOS, 22: FMT_MM}
+            16: FMT_KG, 17: "0.0%", 19: "$#,##0", 20: FMT_GRADOS, 21: FMT_MM}
     for col in range(3, 23):
         val = formulas.get(col, None)
         set_cell(ws, r, col, val, bg, "FFFFFFFF", bold=True, fmt=fmts.get(col))
 
 def escribir_cajero(ws, r, fila, bg_std, bg_sv, bg_ly):
     set_cell(ws, r, 1, f"    {fila['cajero']}", bg_std, "FF1A1A2E", h="left")
-    set_cell(ws, r, 2, fila["turno"], bg_std, "FF5D6D7E")
-    # La caja de delivery dice "DELI" en lugar del numero, con el mismo estilo
-    # que el resto de la columna (pedido de Damian). El numero sigue en la
-    # leyenda "Cajas Delivery" de arriba.
-    set_cell(ws, r, 3, "DELI" if fila.get("es_delivery") else fila["caja"], bg_std, "FF5D6D7E")
-    set_cell(ws, r, 4, fila["horario"], bg_std, "FF1A1A2E")
-    set_cell(ws, r, 5, fila["horas"], bg_std, "FF1A1A2E")
+    # Turno, caja, horario y horas son referencia, no rendimiento: van en gris
+    # claro, igual que en la web. La caja de delivery dice "DELI".
+    set_cell(ws, r, 2, fila["turno"], bg_std, GRIS_REF)
+    set_cell(ws, r, 3, "DELI" if fila.get("es_delivery") else fila["caja"], bg_std, GRIS_REF)
+    set_cell(ws, r, 4, fila["horario"], bg_std, GRIS_REF)
+    set_cell(ws, r, 5, fila["horas"], bg_std, GRIS_REF)
     set_cell(ws, r, 6, fila["kilos"], bg_std, "FF1A1A2E")
     set_cell(ws, r, 7, fila["ventas"], bg_std, "FF1A1A2E", fmt="$#,##0")
     set_cell(ws, r, 8, f'=IFERROR(G{r}/I{r},"")', bg_std, "FF1A1A2E", fmt="$#,##0")
@@ -750,13 +800,13 @@ def escribir_cajero(ws, r, fila, bg_std, bg_sv, bg_ly):
     set_cell(ws, r, 13, fila.get("promos", 0), bg_std, "FF1A1A2E", fmt="$#,##0")
     set_cell(ws, r, 14, f'=IFERROR(M{r}/G{r},"")', bg_std, "FF1A1A2E", fmt="0.0%")
     set_cell(ws, r, 15, fila["socios"], bg_ly, "FF1A1A2E")
-    set_cell(ws, r, 16, fila["ventas_club"], bg_ly, "FF1A1A2E", fmt="$#,##0")
-    set_cell(ws, r, 17, fila.get("kilos_club", 0), bg_ly, "FF1A1A2E")
-    set_cell(ws, r, 18, f'=IFERROR(Q{r}/F{r},"")', bg_ly, "FF1A1A2E", fmt="0.0%")
-    set_cell(ws, r, 19, fila["anuladas"], bg_std, "FF1A1A2E")
-    set_cell(ws, r, 20, fila.get("dif_caja", 0), bg_std, "FF1A1A2E", fmt="$#,##0")
-    set_cell(ws, r, 21, fila.get("sensacion_termica"), COLOR_CLIMA_CELL, "FF1A1A2E", fmt=FMT_GRADOS)
-    set_cell(ws, r, 22, fila.get("lluvia_mm"), COLOR_CLIMA_CELL, "FF1A1A2E", fmt=FMT_MM)
+    set_cell(ws, r, 16, fila.get("kilos_club", 0), bg_ly, "FF1A1A2E", fmt=FMT_KG)
+    set_cell(ws, r, 17, f'=IFERROR(P{r}/F{r},"")', bg_ly, "FF1A1A2E", fmt="0.0%")
+    set_cell(ws, r, 18, fila["anuladas"], bg_std, "FF1A1A2E")
+    set_cell(ws, r, 19, fila.get("dif_caja", 0), bg_std, "FF1A1A2E", fmt="$#,##0")
+    set_cell(ws, r, 20, fila.get("sensacion_termica"), COLOR_CLIMA_CELL, "FF1A1A2E", fmt=FMT_GRADOS)
+    set_cell(ws, r, 21, fila.get("lluvia_mm"), COLOR_CLIMA_CELL, "FF1A1A2E", fmt=FMT_MM)
+    set_cell(ws, r, 22, fila.get("condicion"), COLOR_CLIMA_CELL, "FF1A1A2E")
 
 def construir_excel(datos_suc, date_str):
     """Construye el archivo Excel con el formato del informe."""
@@ -766,12 +816,12 @@ def construir_excel(datos_suc, date_str):
 
     info_suc = datos_suc.get("_suc", {})
     clima_suc = info_suc.get("clima", {})
-    cajas_delivery = info_suc.get("cajas_delivery", {})
+    clima_total = info_suc.get("clima_total", (None, None, None))
 
     # Anchos de columna
-    anchos = {"A":22,"B":8,"C":8,"D":16,"E":7,"F":7,"G":14,"H":12,
-              "I":8,"J":8,"K":8,"L":7,"M":12,"N":8,"O":8,"P":13,
-              "Q":8,"R":8,"S":9,"T":10,"U":10,"V":8}
+    anchos = {"A":22,"B":8,"C":7,"D":16,"E":7,"F":7,"G":14,"H":12,
+              "I":8,"J":8,"K":8,"L":7,"M":12,"N":8,"O":8,"P":10,
+              "Q":9,"R":9,"S":9,"T":13,"U":8,"V":21}
     for col, w in anchos.items():
         ws.column_dimensions[col].width = w
 
@@ -779,7 +829,7 @@ def construir_excel(datos_suc, date_str):
     for r, h in altos.items():
         ws.row_dimensions[r].height = h
 
-    # Fila 1 - Titulo (ya no hay columnas "a desarrollar a futuro": U y V
+    # Fila 1 - Titulo (ya no hay columnas "a desarrollar a futuro": T a V
     # pasaron a ser el clima)
     ws.merge_cells("A1:V1")
     set_cell(ws, 1, 1, f"GRIDO - INFORME DIARIO DE VENTAS | {date_str}",
@@ -809,28 +859,20 @@ def construir_excel(datos_suc, date_str):
 
     ws.merge_cells("I8:L8")
     set_cell(ws, 8, 9, "SOBREVENTAS", "FF6B4226", "FFFFFFFF", bold=True, size=9)
-    ws.merge_cells("O8:R8")
+    ws.merge_cells("O8:Q8")
     set_cell(ws, 8, 15, "CLUB GRIDO", "FF1A5276", "FFFFFFFF", bold=True, size=9)
-    ws.merge_cells("U8:V8")
-    set_cell(ws, 8, 21, "CLIMA", COLOR_CLIMA_HDR, "FFFFFFFF", bold=True, size=9)
-
-    # Fila 6 - Leyenda de cajas de delivery (pedido de Damian del 02/10/2026).
-    # Sale de CFG_CAJA_DELIVERY, la misma tabla que usa la web.
-    partes = [f"{SUC_DISPLAY[s]}: {', '.join(str(c) for c in cajas_delivery.get(s, []))}"
-              for s in ["Escalada", "Fiorito", "Lanus"] if cajas_delivery.get(s)]
-    if partes:
-        ws.merge_cells("A6:V6")
-        set_cell(ws, 6, 1, "CAJAS DELIVERY      " + "      ".join(partes),
-                 COLOR_DELIVERY, "FFFFFFFF", bold=True, size=9, h="left")
+    # Mismo estilo que CLUB GRIDO (espec, seccion 2 bis).
+    ws.merge_cells("T8:V8")
+    set_cell(ws, 8, 20, "CLIMA EN EL TURNO", "FF1A5276", "FFFFFFFF", bold=True, size=9)
 
     # Fila 9 - Headers tabla
     hdrs_std = [(1,"Sucursal / Cajero"),(2,"Turno"),(3,"Caja"),(4,"Horario"),
                 (5,"Horas"),(6,"Kilos"),(7,"Ventas ($)"),(8,"Ticket\nProm. ($)")]
     hdrs_sv = [(9,"Tickets"),(10,"SV\nActivadas"),(11,"SV\nAceptadas"),(12,"%SV")]
     hdrs_mid = [(13,"Promos ($)"),(14,"%Promos")]
-    hdrs_ly = [(15,"Nuevos\nSocios"),(16,"Ventas\nClub Grido"),(17,"Kilos\nClub"),(18,"%VCG\n/Kilos")]
-    hdrs_end = [(19,"Anuladas"),(20,"Dif.\nde Caja")]
-    hdrs_clima = [(21,"Sens. Termica\nProm."),(22,"Lluvia\n(mm)")]
+    hdrs_ly = [(15,"Nuevos\nSocios"),(16,"Kilos\nClub Grido"),(17,"%Kilos CG\n/Kilos")]
+    hdrs_end = [(18,"Anuladas"),(19,"Dif.\nde Caja")]
+    hdrs_clima = [(20,"Sensación térmica\npromedio (°C)"),(21,"Lluvia\n(mm)"),(22,"Condición\nclimática")]
 
     for col, txt in hdrs_std:
         set_cell(ws, 9, col, txt, COLORS["col_hdr"], "FFFFFFFF", bold=True, size=9, wrap=True)
@@ -843,7 +885,7 @@ def construir_excel(datos_suc, date_str):
     for col, txt in hdrs_end:
         set_cell(ws, 9, col, txt, COLORS["col_hdr"], "FFFFFFFF", bold=True, size=9, wrap=True)
     for col, txt in hdrs_clima:
-        set_cell(ws, 9, col, txt, COLOR_CLIMA_HDR, "FFFFFFFF", bold=True, size=9, wrap=True)
+        set_cell(ws, 9, col, txt, COLORS["ly_hdr"], "FFFFFFFF", bold=True, size=9, wrap=True)
 
     # Escribir sucursales
     SUC_COLORS = {
@@ -865,7 +907,7 @@ def construir_excel(datos_suc, date_str):
         last_cajero = current_row + len(filas)
 
         escribir_subtotal(ws, subtotal_row, SUC_DISPLAY[suc], first_cajero, last_cajero, bg_row,
-                          clima_suc.get(suc, (None, None)))
+                          clima_suc.get(suc, (None, None, None)))
         subtotal_rows[suc] = subtotal_row
         current_row += 1
 
@@ -896,14 +938,16 @@ def construir_excel(datos_suc, date_str):
         14: f'=IFERROR(M{r_total}/G{r_total},"")',
         15: f"={'+'.join([f'O{r}' for r in sub_rows])}",
         16: f"={'+'.join([f'P{r}' for r in sub_rows])}",
-        17: f"={'+'.join([f'Q{r}' for r in sub_rows])}",
-        18: f'=IFERROR(Q{r_total}/F{r_total},"")',
+        17: f'=IFERROR(P{r_total}/F{r_total},"")',
+        18: f"={'+'.join([f'R{r}' for r in sub_rows])}",
         19: f"={'+'.join([f'S{r}' for r in sub_rows])}",
-        20: f"={'+'.join([f'T{r}' for r in sub_rows])}",
-        # U y V (clima) quedan vacias en el TOTAL: el clima es de cada
-        # sucursal y un promedio entre zonas no describe a ninguna.
+        # Clima de todas las horas del dia con algun turno (es clima de zona).
+        20: clima_total[0],
+        21: clima_total[1],
+        22: clima_total[2],
     }
-    fmts_total = {7:"$#,##0",8:"$#,##0",12:"0.0%",13:"$#,##0",14:"0.0%",16:"$#,##0",18:"0.0%",20:"$#,##0"}
+    fmts_total = {7:"$#,##0",8:"$#,##0",12:"0.0%",13:"$#,##0",14:"0.0%",16:FMT_KG,17:"0.0%",19:"$#,##0",
+                  20:FMT_GRADOS,21:FMT_MM}
 
     for col in range(2, 23):
         val = total_formulas.get(col)

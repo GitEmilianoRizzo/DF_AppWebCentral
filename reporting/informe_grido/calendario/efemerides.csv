@@ -1,0 +1,80 @@
+﻿Fecha;Nombre;Clave;Tipo;Verificado
+2024-02-14;San Valentín;SAN_VALENTIN;Comercial;Sí (fecha fija)
+2024-03-01;Inicio de clases (Prov. de Buenos Aires: Lanús y Lomas de Zamora);INICIO_CLASES;Escolar;No
+2024-03-31;Pascua (Domingo de Resurrección);PASCUA;Familiar;Sí (calculada)
+2024-06-16;Día del Padre;DIA_PADRE;Familiar;Sí (3er domingo de junio)
+2024-06-30;Aguinaldo: fecha límite de pago (1ª cuota);AGUINALDO;Ingresos;Sí (por ley)
+2024-07-14;Final Copa América (Argentina campeón);FUTBOL;Deportivo;No
+2024-07-15;Inicio receso invernal escolar (Prov. de Buenos Aires);RECESO_INICIO;Escolar;No
+2024-07-20;Día del Amigo;DIA_AMIGO;Comercial;Sí (fecha fija)
+2024-07-26;Fin receso invernal escolar (Prov. de Buenos Aires);RECESO_FIN;Escolar;No
+2024-08-18;Día del Niño;DIA_NINO;Familiar;Sí (3er domingo de agosto)
+2024-09-11;Día del Maestro (sin clases);DIA_MAESTRO;Escolar;No
+2024-09-21;Día de la Primavera y del Estudiante (sin clases);PRIMAVERA;Escolar;Sí (fecha fija)
+2024-10-20;Día de la Madre;DIA_MADRE;Familiar;Sí (3er domingo de octubre)
+2024-10-31;Halloween;HALLOWEEN;Comercial;Sí (fecha fija)
+2024-12-18;Aguinaldo: fecha límite de pago (2ª cuota);AGUINALDO;Ingresos;Sí (por ley)
+2024-12-20;Fin de clases (Prov. de Buenos Aires);FIN_CLASES;Escolar;No
+2024-12-24;Nochebuena;NOCHEBUENA;Familiar;Sí (fecha fija)
+2024-12-31;Fin de año;FIN_ANIO;Familiar;Sí (fecha fija)
+2025-02-14;San Valentín;SAN_VALENTIN;Comercial;Sí (fecha fija)
+2025-03-05;Inicio de clases (Prov. de Buenos Aires: Lanús y Lomas de Zamora);INICIO_CLASES;Escolar;No
+2025-04-20;Pascua (Domingo de Resurrección);PASCUA;Familiar;Sí (calculada)
+2025-06-15;Día del Padre;DIA_PADRE;Familiar;Sí (3er domingo de junio)
+2025-06-30;Aguinaldo: fecha límite de pago (1ª cuota);AGUINALDO;Ingresos;Sí (por ley)
+2025-07-20;Día del Amigo;DIA_AMIGO;Comercial;Sí (fecha fija)
+2025-07-21;Inicio receso invernal escolar (Prov. de Buenos Aires);RECESO_INICIO;Escolar;No
+2025-08-01;Fin receso invernal escolar (Prov. de Buenos Aires);RECESO_FIN;Escolar;No
+2025-08-17;Día del Niño;DIA_NINO;Familiar;Sí (3er domingo de agosto)
+2025-09-07;Elecciones provinciales (Prov. de Buenos Aires);ELECCIONES;Electoral;No
+2025-09-11;Día del Maestro (sin clases);DIA_MAESTRO;Escolar;No
+2025-09-21;Día de la Primavera y del Estudiante (sin clases);PRIMAVERA;Escolar;Sí (fecha fija)
+2025-10-19;Día de la Madre;DIA_MADRE;Familiar;Sí (3er domingo de octubre)
+2025-10-26;Elecciones nacionales legislativas;ELECCIONES;Electoral;No
+2025-10-31;Halloween;HALLOWEEN;Comercial;Sí (fecha fija)
+2025-12-18;Aguinaldo: fecha límite de pago (2ª cuota);AGUINALDO;Ingresos;Sí (por ley)
+2025-12-22;Fin de clases (Prov. de Buenos Aires);FIN_CLASES;Escolar;No
+2025-12-24;Nochebuena;NOCHEBUENA;Familiar;Sí (fecha fija)
+2025-12-31;Fin de año;FIN_ANIO;Familiar;Sí (fecha fija)
+2026-02-14;San Valentín;SAN_VALENTIN;Comercial;Sí (fecha fija)
+2026-03-02;Inicio de clases (Prov. de Buenos Aires: Lanús y Lomas de Zamora);INICIO_CLASES;Escolar;No
+2026-04-05;Pascua (Domingo de Resurrección);PASCUA;Familiar;Sí (calculada)
+2026-06-11;Inicio del Mundial 2026;MUNDIAL;Deportivo;No
+2026-06-16;Mundial 2026: partido de Argentina (fase de grupos);MUNDIAL_ARG;Deportivo;No
+2026-06-21;Día del Padre;DIA_PADRE;Familiar;Sí (3er domingo de junio)
+2026-06-22;Mundial 2026: partido de Argentina (fase de grupos);MUNDIAL_ARG;Deportivo;No
+2026-06-27;Mundial 2026: partido de Argentina (fase de grupos);MUNDIAL_ARG;Deportivo;No
+2026-06-30;Aguinaldo: fecha límite de pago (1ª cuota);AGUINALDO;Ingresos;Sí (por ley)
+2026-07-19;Final del Mundial 2026;MUNDIAL;Deportivo;No
+2026-07-20;Inicio receso invernal escolar (Prov. de Buenos Aires);RECESO_INICIO;Escolar;No
+2026-07-20;Día del Amigo;DIA_AMIGO;Comercial;Sí (fecha fija)
+2026-07-31;Fin receso invernal escolar (Prov. de Buenos Aires);RECESO_FIN;Escolar;No
+2026-08-16;Día del Niño;DIA_NINO;Familiar;Sí (3er domingo de agosto)
+2026-09-11;Día del Maestro (sin clases);DIA_MAESTRO;Escolar;No
+2026-09-21;Día de la Primavera y del Estudiante (sin clases);PRIMAVERA;Escolar;Sí (fecha fija)
+2026-10-18;Día de la Madre;DIA_MADRE;Familiar;Sí (3er domingo de octubre)
+2026-10-31;Halloween;HALLOWEEN;Comercial;Sí (fecha fija)
+2026-11-08;Llega el Papa León XIV a la Argentina (Ezeiza y Casa Rosada) - no es feriado;VISITA_PAPA;Evento;Sí (DNU 1103/2026)
+2026-11-10;Visita del Papa: feriado solo en CABA y Córdoba (no rige en Lanús ni Lomas de Zamora);VISITA_PAPA;Evento;Sí (DNU 1103/2026)
+2026-12-18;Aguinaldo: fecha límite de pago (2ª cuota);AGUINALDO;Ingresos;Sí (por ley)
+2026-12-18;Fin de clases (Prov. de Buenos Aires, aprox.);FIN_CLASES;Escolar;No
+2026-12-24;Nochebuena;NOCHEBUENA;Familiar;Sí (fecha fija)
+2026-12-31;Fin de año;FIN_ANIO;Familiar;Sí (fecha fija)
+2027-02-14;San Valentín;SAN_VALENTIN;Comercial;Sí (fecha fija)
+2027-03-01;Inicio de clases (Prov. de Buenos Aires, aprox.);INICIO_CLASES;Escolar;No
+2027-03-28;Pascua (Domingo de Resurrección);PASCUA;Familiar;Sí (calculada)
+2027-06-20;Día del Padre;DIA_PADRE;Familiar;Sí (3er domingo de junio)
+2027-06-30;Aguinaldo: fecha límite de pago (1ª cuota);AGUINALDO;Ingresos;Sí (por ley)
+2027-07-19;Inicio receso invernal escolar (Prov. de Buenos Aires, aprox.);RECESO_INICIO;Escolar;No
+2027-07-20;Día del Amigo;DIA_AMIGO;Comercial;Sí (fecha fija)
+2027-07-30;Fin receso invernal escolar (Prov. de Buenos Aires, aprox.);RECESO_FIN;Escolar;No
+2027-08-15;Día del Niño;DIA_NINO;Familiar;Sí (3er domingo de agosto)
+2027-09-11;Día del Maestro (sin clases);DIA_MAESTRO;Escolar;No
+2027-09-21;Día de la Primavera y del Estudiante (sin clases);PRIMAVERA;Escolar;Sí (fecha fija)
+2027-10-17;Día de la Madre;DIA_MADRE;Familiar;Sí (3er domingo de octubre)
+2027-10-24;Elecciones generales (aprox.);ELECCIONES;Electoral;No
+2027-10-31;Halloween;HALLOWEEN;Comercial;Sí (fecha fija)
+2027-12-17;Fin de clases (Prov. de Buenos Aires, aprox.);FIN_CLASES;Escolar;No
+2027-12-18;Aguinaldo: fecha límite de pago (2ª cuota);AGUINALDO;Ingresos;Sí (por ley)
+2027-12-24;Nochebuena;NOCHEBUENA;Familiar;Sí (fecha fija)
+2027-12-31;Fin de año;FIN_ANIO;Familiar;Sí (fecha fija)
