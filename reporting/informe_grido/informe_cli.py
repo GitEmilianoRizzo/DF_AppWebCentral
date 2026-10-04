@@ -66,6 +66,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
 
 import informe_grido as ig  # noqa: E402
+import hojas_extra as hx  # noqa: E402
 
 CONFIG_PATH = os.path.join(BASE_DIR, "config.ini")
 DIR_SALIDAS = os.path.join(BASE_DIR, "salidas")
@@ -157,6 +158,15 @@ def generar_informe(cfg, fecha_informe, hora_corte):
         log.info("Clima: %d horas", len(df_clima))
         df_cajas = ig.get_cajas_delivery(conn)
         log.info("Cajas delivery: %d", len(df_cajas))
+        # Datos de las 5 hojas extra (Productos, Promociones, ...), del DWH.
+        # Son complementarias: si fallan, el informe sale con la hoja principal.
+        try:
+            datos_hojas = hx.leer_datos(conn, fecha_informe)
+            log.info("Hojas extra: %s", ", ".join(f"{k} {len(v)}" for k, v in datos_hojas.items()))
+        except Exception:
+            datos_hojas = None
+            log.error("No se pudieron leer los datos de las hojas extra; el informe sale sin ellas:\n%s",
+                      traceback.format_exc())
     finally:
         try:
             conn.close()
@@ -173,6 +183,7 @@ def generar_informe(cfg, fecha_informe, hora_corte):
     clima = ig.procesar_clima(df_clima, suc_map)
     cajas = ig.procesar_cajas_delivery(df_cajas, suc_map)
     datos = ig.ensamblar(turnos, kilos, socios, extra, clima, cajas)
+    datos["_hojas"] = datos_hojas
 
     resumen = armar_resumen(datos, fecha_inicio, fecha_fin)
     return datos, resumen
@@ -207,6 +218,16 @@ def armar_resumen(datos, fecha_inicio, fecha_fin):
 def guardar_excel(datos, fecha_informe):
     os.makedirs(DIR_SALIDAS, exist_ok=True)
     wb = ig.construir_excel(datos, fecha_informe.strftime("%d/%m/%Y"))
+    if datos.get("_hojas"):
+        try:
+            control = hx.agregar_hojas(wb, datos["_hojas"], fecha_informe)
+            log.info("Hojas extra: %d productos, %d tickets ($%s)", control["productos"]["filas"],
+                     control["tickets"]["renglones"], _ar(control["tickets"]["importe"], 2))
+        except Exception:
+            log.error("Fallo al armar las hojas extra; el Excel sale solo con el Informe Diario:\n%s",
+                      traceback.format_exc())
+            for nombre in list(wb.sheetnames)[1:]:
+                del wb[nombre]
     ruta = os.path.join(DIR_SALIDAS,
                         f"{fecha_informe:%Y-%m-%d}_InformeDiarioGRIDO.xlsx")
     wb.save(ruta)
