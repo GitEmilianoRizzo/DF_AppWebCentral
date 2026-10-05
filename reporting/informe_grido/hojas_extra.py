@@ -257,11 +257,16 @@ def hoja_productos(wb, d, fecha_txt):
     df = _orden_suc(df.sort_values(["Rubro", "Cantidad"], ascending=[True, False]))
     _encabezado(ws, 4, 1, ["Sucursal", "Rubro", "Producto", "Cantidad", "Kilos", "Venta"], BANNER)
     fmts = {4: F_CANT, 5: F_KG, 6: F_PESOS}
+    ws.freeze_panes = "A5"
+    if df.empty:
+        # Sin ventas (por ejemplo, la base de origen todavia no sincronizo):
+        # un rango D5:D4 rompe el formato condicional y se perdian las 5 hojas.
+        _cel(ws, 5, 1, "Sin ventas en el día", bold=True)
+        return {"filas": 0, "cantidad": 0.0, "kilos": 0.0, "venta": 0.0, "top": pd.Series(dtype=float)}
     ult = _detalle(ws, df, ["Suc", "Rubro", "Producto", "Cantidad", "Kilos", "Venta"], fmts)
     rt = ult + 1
     _fila_total(ws, rt, 1, 6, [4, 5, 6], 5, ult, fmts)
     ws.auto_filter.ref = f"A4:F{ult}"
-    ws.freeze_panes = "A5"
     ws.conditional_formatting.add(f"D5:D{ult}", DataBarRule(start_type="min", end_type="max", color="C39B77"))
     rng = lambda L: f"${L}$5:${L}${ult}"  # rangos acotados al detalle
 
